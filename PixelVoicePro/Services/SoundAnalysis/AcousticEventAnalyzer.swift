@@ -107,8 +107,8 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
     /// Permite registrar un evento acústico directamente o desde post-procesamiento.
     func recordDetectedEvent(_ event: AcousticEvent) {
         let lastTime = lastEventByType[event.type] ?? -100.0
-        // Evitar duplicados consecutivos del mismo evento en menos de 2.5 segundos
-        guard (event.timestamp - lastTime) >= 2.5 else { return }
+        // Evitar duplicados consecutivos del mismo evento en menos de 6.0 segundos
+        guard (event.timestamp - lastTime) >= 6.0 else { return }
 
         lastEventByType[event.type] = event.timestamp
         detectedEvents.append(event)
@@ -150,9 +150,9 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
         let timestampSeconds = CMTimeGetSeconds(classificationResult.timeRange.start)
         let durationSeconds = max(0.8, CMTimeGetSeconds(classificationResult.timeRange.duration))
 
-        // Examinar las 3 clasificaciones principales del modelo acústico de Apple
+        // Examinar las 3 clasificaciones principales del modelo acústico de Apple con umbral estricto
         for classification in classificationResult.classifications.prefix(3) {
-            guard classification.confidence >= 0.38 else { continue }
+            guard classification.confidence >= 0.62 else { continue }
             if let mappedType = mapAppleSoundIdentifier(classification.identifier) {
                 let event = AcousticEvent(
                     type: mappedType,

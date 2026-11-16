@@ -1,0 +1,287 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000012700000000000001 /* PixelVoiceProApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000012700000000000001 /* PixelVoiceProApp.swift */; };
+		A10000022700000000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000022700000000000001 /* ContentView.swift */; };
+		A10000032700000000000001 /* ExactDateFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000032700000000000001 /* ExactDateFormatter.swift */; };
+		A10000042700000000000001 /* ColorTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000042700000000000001 /* ColorTheme.swift */; };
+		A10000052700000000000001 /* RecordingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000052700000000000001 /* RecordingModels.swift */; };
+		A10000062700000000000001 /* VoiceRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000062700000000000001 /* VoiceRecording.swift */; };
+		A10000072700000000000001 /* AudioSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000072700000000000001 /* AudioSessionManager.swift */; };
+		A10000082700000000000001 /* AudioRecorderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000082700000000000001 /* AudioRecorderService.swift */; };
+		A10000092700000000000001 /* AudioPlayerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000092700000000000001 /* AudioPlayerService.swift */; };
+		A10000102700000000000001 /* SpeakerDiarizationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000102700000000000001 /* SpeakerDiarizationService.swift */; };
+		A10000112700000000000001 /* SpeechTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000112700000000000001 /* SpeechTranscriptionService.swift */; };
+		A10000122700000000000001 /* AcousticEventAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000122700000000000001 /* AcousticEventAnalyzer.swift */; };
+		A10000132700000000000001 /* RecordingStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000132700000000000001 /* RecordingStorageService.swift */; };
+		A10000142700000000000001 /* ExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000142700000000000001 /* ExportService.swift */; };
+		A10000152700000000000001 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000152700000000000001 /* AppViewModel.swift */; };
+		A10000162700000000000001 /* WaveformInteractiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000162700000000000001 /* WaveformInteractiveView.swift */; };
+		A10000172700000000000001 /* QuickRenameAndTagSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000172700000000000001 /* QuickRenameAndTagSheet.swift */; };
+		A10000182700000000000001 /* SpeakerRenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000182700000000000001 /* SpeakerRenameSheet.swift */; };
+		A10000192700000000000001 /* ExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000192700000000000001 /* ExportOptionsSheet.swift */; };
+		A10000202700000000000001 /* RecordingSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000202700000000000001 /* RecordingSettingsSheet.swift */; };
+		A10000212700000000000001 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000212700000000000001 /* DashboardView.swift */; };
+		A10000222700000000000001 /* RecordingBoothView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000222700000000000001 /* RecordingBoothView.swift */; };
+		A10000232700000000000001 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000232700000000000001 /* RecordingDetailView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A00000012700000000000001 /* PixelVoicePro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PixelVoicePro.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000012700000000000001 /* PixelVoiceProApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/App/PixelVoiceProApp.swift; sourceTree = "<group>"; };
+		A20000022700000000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/App/ContentView.swift; sourceTree = "<group>"; };
+		A20000032700000000000001 /* ExactDateFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Utilities/ExactDateFormatter.swift; sourceTree = "<group>"; };
+		A20000042700000000000001 /* ColorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Utilities/ColorTheme.swift; sourceTree = "<group>"; };
+		A20000052700000000000001 /* RecordingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Models/RecordingModels.swift; sourceTree = "<group>"; };
+		A20000062700000000000001 /* VoiceRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Models/VoiceRecording.swift; sourceTree = "<group>"; };
+		A20000072700000000000001 /* AudioSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/Audio/AudioSessionManager.swift; sourceTree = "<group>"; };
+		A20000082700000000000001 /* AudioRecorderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/Audio/AudioRecorderService.swift; sourceTree = "<group>"; };
+		A20000092700000000000001 /* AudioPlayerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/Audio/AudioPlayerService.swift; sourceTree = "<group>"; };
+		A20000102700000000000001 /* SpeakerDiarizationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/Transcription/SpeakerDiarizationService.swift; sourceTree = "<group>"; };
+		A20000112700000000000001 /* SpeechTranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/Transcription/SpeechTranscriptionService.swift; sourceTree = "<group>"; };
+		A20000122700000000000001 /* AcousticEventAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/SoundAnalysis/AcousticEventAnalyzer.swift; sourceTree = "<group>"; };
+		A20000132700000000000001 /* RecordingStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/Storage/RecordingStorageService.swift; sourceTree = "<group>"; };
+		A20000142700000000000001 /* ExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/Export/ExportService.swift; sourceTree = "<group>"; };
+		A20000152700000000000001 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/ViewModels/AppViewModel.swift; sourceTree = "<group>"; };
+		A20000162700000000000001 /* WaveformInteractiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/WaveformInteractiveView.swift; sourceTree = "<group>"; };
+		A20000172700000000000001 /* QuickRenameAndTagSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/QuickRenameAndTagSheet.swift; sourceTree = "<group>"; };
+		A20000182700000000000001 /* SpeakerRenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/SpeakerRenameSheet.swift; sourceTree = "<group>"; };
+		A20000192700000000000001 /* ExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/ExportOptionsSheet.swift; sourceTree = "<group>"; };
+		A20000202700000000000001 /* RecordingSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Settings/RecordingSettingsSheet.swift; sourceTree = "<group>"; };
+		A20000212700000000000001 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Dashboard/DashboardView.swift; sourceTree = "<group>"; };
+		A20000222700000000000001 /* RecordingBoothView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Recording/RecordingBoothView.swift; sourceTree = "<group>"; };
+		A20000232700000000000001 /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Detail/RecordingDetailView.swift; sourceTree = "<group>"; };
+		A20000242700000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PixelVoicePro/Resources/Info.plist; sourceTree = "<group>"; };
+		A20000252700000000000001 /* PixelVoicePro.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PixelVoicePro/Resources/PixelVoicePro.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		A30000012700000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A20000012700000000000001 /* PixelVoiceProApp.swift */,
+				A20000022700000000000001 /* ContentView.swift */,
+				A20000032700000000000001 /* ExactDateFormatter.swift */,
+				A20000042700000000000001 /* ColorTheme.swift */,
+				A20000052700000000000001 /* RecordingModels.swift */,
+				A20000062700000000000001 /* VoiceRecording.swift */,
+				A20000072700000000000001 /* AudioSessionManager.swift */,
+				A20000082700000000000001 /* AudioRecorderService.swift */,
+				A20000092700000000000001 /* AudioPlayerService.swift */,
+				A20000102700000000000001 /* SpeakerDiarizationService.swift */,
+				A20000112700000000000001 /* SpeechTranscriptionService.swift */,
+				A20000122700000000000001 /* AcousticEventAnalyzer.swift */,
+				A20000132700000000000001 /* RecordingStorageService.swift */,
+				A20000142700000000000001 /* ExportService.swift */,
+				A20000152700000000000001 /* AppViewModel.swift */,
+				A20000162700000000000001 /* WaveformInteractiveView.swift */,
+				A20000172700000000000001 /* QuickRenameAndTagSheet.swift */,
+				A20000182700000000000001 /* SpeakerRenameSheet.swift */,
+				A20000192700000000000001 /* ExportOptionsSheet.swift */,
+				A20000202700000000000001 /* RecordingSettingsSheet.swift */,
+				A20000212700000000000001 /* DashboardView.swift */,
+				A20000222700000000000001 /* RecordingBoothView.swift */,
+				A20000232700000000000001 /* RecordingDetailView.swift */,
+				A20000242700000000000001 /* Info.plist */,
+				A20000252700000000000001 /* PixelVoicePro.entitlements */,
+				A30000022700000000000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A30000022700000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000012700000000000001 /* PixelVoicePro.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A40000012700000000000001 /* PixelVoicePro */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A60000022700000000000001 /* Build configuration list for PBXNativeTarget "PixelVoicePro" */;
+			buildPhases = (
+				A50000012700000000000001 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PixelVoicePro;
+			productName = PixelVoicePro;
+			productReference = A00000012700000000000001 /* PixelVoicePro.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A70000012700000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = A60000012700000000000001 /* Build configuration list for PBXProject "PixelVoicePro" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = es;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				es,
+				en,
+				Base,
+			);
+			mainGroup = A30000012700000000000001;
+			productRefGroup = A30000022700000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A40000012700000000000001 /* PixelVoicePro */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A50000012700000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000012700000000000001 /* PixelVoiceProApp.swift in Sources */,
+				A10000022700000000000001 /* ContentView.swift in Sources */,
+				A10000032700000000000001 /* ExactDateFormatter.swift in Sources */,
+				A10000042700000000000001 /* ColorTheme.swift in Sources */,
+				A10000052700000000000001 /* RecordingModels.swift in Sources */,
+				A10000062700000000000001 /* VoiceRecording.swift in Sources */,
+				A10000072700000000000001 /* AudioSessionManager.swift in Sources */,
+				A10000082700000000000001 /* AudioRecorderService.swift in Sources */,
+				A10000092700000000000001 /* AudioPlayerService.swift in Sources */,
+				A10000102700000000000001 /* SpeakerDiarizationService.swift in Sources */,
+				A10000112700000000000001 /* SpeechTranscriptionService.swift in Sources */,
+				A10000122700000000000001 /* AcousticEventAnalyzer.swift in Sources */,
+				A10000132700000000000001 /* RecordingStorageService.swift in Sources */,
+				A10000142700000000000001 /* ExportService.swift in Sources */,
+				A10000152700000000000001 /* AppViewModel.swift in Sources */,
+				A10000162700000000000001 /* WaveformInteractiveView.swift in Sources */,
+				A10000172700000000000001 /* QuickRenameAndTagSheet.swift in Sources */,
+				A10000182700000000000001 /* SpeakerRenameSheet.swift in Sources */,
+				A10000192700000000000001 /* ExportOptionsSheet.swift in Sources */,
+				A10000202700000000000001 /* RecordingSettingsSheet.swift in Sources */,
+				A10000212700000000000001 /* DashboardView.swift in Sources */,
+				A10000222700000000000001 /* RecordingBoothView.swift in Sources */,
+				A10000232700000000000001 /* RecordingDetailView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A60000032700000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_STYLE = Automatic;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Debug;
+		};
+		A60000042700000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_STYLE = Automatic;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.10;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		A60000052700000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = PixelVoicePro/Resources/PixelVoicePro.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2701;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PixelVoicePro/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pixelvoicepro.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.10;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A60000062700000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = PixelVoicePro/Resources/PixelVoicePro.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2701;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PixelVoicePro/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pixelvoicepro.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.10;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A60000012700000000000001 /* Build configuration list for PBXProject "PixelVoicePro" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A60000032700000000000001 /* Debug */,
+				A60000042700000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A60000022700000000000001 /* Build configuration list for PBXNativeTarget "PixelVoicePro" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A60000052700000000000001 /* Debug */,
+				A60000062700000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A70000012700000000000001 /* Project object */;
+}

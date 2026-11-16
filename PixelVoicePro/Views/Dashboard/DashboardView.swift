@@ -33,15 +33,21 @@ struct DashboardView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 6)
                     .padding(.bottom, 110)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        dismissKeyboard()
-                    }
                 }
                 .scrollDismissesKeyboard(.immediately)
+                .background(
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            dismissKeyboard()
+                        }
+                )
 
                 // 5. Botón Flotante Inferior Limpio: "Nueva Grabación"
                 floatingRecordButtonBar
+            }
+            .onAppear {
+                dismissKeyboard()
             }
             .navigationTitle("PixelVoice Pro")
             .toolbar {

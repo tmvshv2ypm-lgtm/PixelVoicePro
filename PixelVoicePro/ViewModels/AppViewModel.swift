@@ -76,7 +76,13 @@ final class AppViewModel: ObservableObject {
     }
 
     func nextSequentialTitle() -> String {
-        let nextNumber = recordings.count + 1
+        let maxExisting = recordings.compactMap { rec -> Int? in
+            let prefix = "Grabación "
+            guard rec.title.hasPrefix(prefix) else { return nil }
+            let suffix = rec.title.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+            return Int(suffix)
+        }.max() ?? 0
+        let nextNumber = max(recordings.count, maxExisting) + 1
         return "Grabación \(nextNumber)"
     }
 

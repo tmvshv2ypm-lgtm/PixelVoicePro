@@ -4,7 +4,7 @@ import SoundAnalysis
 import Accelerate
 
 /// Analizador de Eventos Acústicos y Sonidos No Verbales basado en `SoundAnalysis` (CoreML de Apple) y DSP (`vDSP`).
-/// Detecta risas, aplausos, música de fondo, suspiros, tos y pausas largas en vivo y en post-procesamiento.
+/// Soporta tanto modo en vivo como análisis completo post-grabación para ahorrar batería en clases largas.
 final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
     private let analysisQueue = DispatchQueue(label: "com.pixelvoicepro.soundanalysis", qos: .userInitiated)
     private var streamAnalyzer: SNAudioStreamAnalyzer?
@@ -18,7 +18,7 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
     private var lastEventByType: [AcousticEventType: TimeInterval] = [:]
 
     /// Umbral en segundos para considerar un silencio como `[⏸️ Pausa larga]` en la transcripción
-    private let longPauseThresholdSeconds: TimeInterval = 2.4
+    private let longPauseThresholdSeconds: TimeInterval = 2.5
     /// Umbral en segundos para registrar un `SilenceInterval` omitible por el reproductor "Saltar silencios"
     private let skippableSilenceThresholdSeconds: TimeInterval = 0.45
 
@@ -27,14 +27,16 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
     /// Callback para el estado sutil en vivo de la cabina de grabación
     var onLiveStatusChanged: ((String, AcousticEventType?) -> Void)?
 
-    /// Configura el `SNAudioStreamAnalyzer` con el formato del bus de entrada de `AVAudioEngine`.
-    func startLiveStreamAnalysis(format: AVAudioFormat) {
+    func reset() {
         detectedEvents.removeAll()
         silenceIntervals.removeAll()
         silenceStartTime = nil
         lastEventByType.removeAll()
         currentSampleTime = 0
+    }
 
+    /// Configura el `SNAudioStreamAnalyzer` con el formato del bus de entrada de `AVAudioEngine`.
+    func startLiveStreamAnalysis(format: AVAudioFormat) {
         analysisQueue.sync {
             let analyzer = SNAudioStreamAnalyzer(format: format)
             self.streamAnalyzer = analyzer
@@ -44,7 +46,7 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
                 request.overlapFactor = 0.5
                 try analyzer.add(request, withObserver: self)
             } catch {
-                // Si el dispositivo no soporta el clasificador v1, el detector espectral DSP sigue activo
+                // El detector DSP de pausas sigue activo
             }
         }
     }
@@ -61,15 +63,17 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
     }
 
     /// Alimenta un `AVAudioPCMBuffer` tanto al `SNAudioStreamAnalyzer` como al detector de pausas y silencios DSP.
-    func analyzeBuffer(_ buffer: AVAudioPCMBuffer, at timestamp: TimeInterval) {
+    func analyzeBuffer(_ buffer: AVAudioPCMBuffer, at timestamp: TimeInterval, runMLStream: Bool = true) {
         let framePosition = currentSampleTime
         currentSampleTime += AVAudioFramePosition(buffer.frameLength)
 
-        analysisQueue.async { [weak self] in
-            self?.streamAnalyzer?.analyze(buffer, atAudioFramePosition: framePosition)
+        if runMLStream {
+            analysisQueue.async { [weak self] in
+                self?.streamAnalyzer?.analyze(buffer, atAudioFramePosition: framePosition)
+            }
         }
 
-        // Análisis instantáneo de energía RMS para detectar silencios largos e intervalos omitibles
+        // Análisis ligero de energía RMS para detectar silencios largos e intervalos omitibles con consumo casi nulo de CPU
         guard let floatData = buffer.floatChannelData?[0] else { return }
         let frameCount = Int(buffer.frameLength)
         guard frameCount > 0 else { return }
@@ -85,7 +89,7 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
                 let elapsedSilence = timestamp - start
                 if elapsedSilence >= longPauseThresholdSeconds {
                     let lastPauseTime = lastEventByType[.longPause] ?? -100.0
-                    if timestamp - lastPauseTime >= 4.0 {
+                    if timestamp - lastPauseTime >= 6.0 {
                         let event = AcousticEvent(
                             type: .longPause,
                             timestamp: start,
@@ -100,6 +104,29 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
             if let start = silenceStartTime {
                 finalizeSilenceInterval(from: start, to: timestamp)
                 silenceStartTime = nil
+            }
+        }
+    }
+
+    /// Analiza el archivo de audio completo al finalizar la grabación (`SNAudioFileAnalyzer`) cuando el usuario grabó en modo ahorro de batería.
+    func analyzeCompleteAudioFileIfNeeded(at fileURL: URL) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            analysisQueue.async { [weak self] in
+                guard let self = self else {
+                    continuation.resume()
+                    return
+                }
+                do {
+                    let fileAnalyzer = try SNAudioFileAnalyzer(url: fileURL)
+                    let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
+                    request.windowDuration = CMTimeMakeWithSeconds(1.5, preferredTimescale: 48000)
+                    request.overlapFactor = 0.35
+                    try fileAnalyzer.add(request, withObserver: self)
+                    fileAnalyzer.analyze()
+                } catch {
+                    // Si el archivo es muy corto o falla el clasificador, continúa con los eventos ya registrados
+                }
+                continuation.resume()
             }
         }
     }
@@ -128,10 +155,9 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
         let interval = SilenceInterval(startTime: start, endTime: end)
         silenceIntervals.append(interval)
 
-        // Si el silencio superó el umbral de pausa larga y aún no se había insertado etiqueta, registrarla
         if duration >= longPauseThresholdSeconds {
             let lastPauseTime = lastEventByType[.longPause] ?? -100.0
-            if start - lastPauseTime >= 3.0 {
+            if start - lastPauseTime >= 6.0 {
                 let event = AcousticEvent(
                     type: .longPause,
                     timestamp: start,
@@ -150,7 +176,6 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
         let timestampSeconds = CMTimeGetSeconds(classificationResult.timeRange.start)
         let durationSeconds = max(0.8, CMTimeGetSeconds(classificationResult.timeRange.duration))
 
-        // Examinar las 3 clasificaciones principales del modelo acústico de Apple con umbral estricto
         for classification in classificationResult.classifications.prefix(3) {
             guard classification.confidence >= 0.62 else { continue }
             if let mappedType = mapAppleSoundIdentifier(classification.identifier) {
@@ -166,13 +191,10 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
         }
     }
 
-    func request(_ request: SNRequest, didFailWithError error: Error) {
-        // Continúa operando con el detector de pausas y energía DSP sin interrumpir la grabación
-    }
+    func request(_ request: SNRequest, didFailWithError error: Error) {}
 
     func requestDidComplete(_ request: SNRequest) {}
 
-    /// Mapea los identificadores taxonómicos de `SNClassifierIdentifier.version1` a nuestros tipos de evento de PixelVoice Pro.
     private func mapAppleSoundIdentifier(_ identifier: String) -> AcousticEventType? {
         let normalized = identifier.lowercased()
 
@@ -206,8 +228,7 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
         if normalized.contains("sigh") ||
            normalized.contains("gasp") ||
            normalized.contains("yawn") ||
-           normalized.contains("pant") ||
-           normalized.contains("breathing") {
+           normalized.contains("pant") {
             return .sigh
         }
 

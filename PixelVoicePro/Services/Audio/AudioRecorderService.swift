@@ -4,9 +4,9 @@ import Accelerate
 import UIKit
 import CryptoKit
 
-/// Motor de Grabación de Audio Avanzado (`AVFoundation` + `AVAudioEngine`) a 60 FPS.
-/// Soporta grabación `.m4a` (AAC) y `.wav` (Linear PCM), visualización de onda y espectro en tiempo real,
-/// marcadores en vivo (Bookmarks), transcripción simultánea, separación de locutores y análisis de sonido.
+/// Motor de Grabación de Audio Avanzado (`AVFoundation` + `AVAudioEngine`) optimizado para clases universitarias largas:
+/// Soporta línea de tiempo con zoom tipo CapCut, tarjeta persistente en pantalla bloqueada (Live Activity + Lock Screen),
+/// transcripción en vivo opcional/plegable para ahorrar RAM y batería, y pipeline completo de post-procesamiento por fragmentos de 45s.
 @MainActor
 final class AudioRecorderService: ObservableObject {
     enum RecorderState: Equatable {
@@ -22,22 +22,33 @@ final class AudioRecorderService: ObservableObject {
     @Published private(set) var currentDecibels: Float = -60.0
     @Published private(set) var normalizedLevel: Float = 0.0
 
-    /// Ventana deslizante de muestras normalizadas a 60 FPS para la gráfica de onda en vivo
+    /// Ventana deslizante rápida a 60 FPS + historial temporal (10 muestras/seg) para la línea de tiempo con Zoom tipo CapCut
     @Published private(set) var liveWaveformWindow: [Float] = Array(repeating: 0.04, count: 96)
-    /// 28 bandas de frecuencia en tiempo real para el espectrograma/analizador de barras
+    @Published private(set) var liveTimelineSamples: [Float] = []
     @Published private(set) var liveSpectrumBands: [Float] = Array(repeating: 0.05, count: 28)
 
-    /// Estado del detector visual en vivo (ej. "🎙️ Voz activa · Locutor 1 (142 Hz)" o "😂 Risas detectadas")
+    /// Control de ahorro de RAM y batería: oculto/apagado por defecto para grabaciones de varias horas
+    @Published private(set) var isLiveTranscriptionEnabled: Bool = false
+
+    /// Estado de progreso del post-procesamiento completo al finalizar
+    @Published private(set) var postProcessingProgress: Double = 0.0
+    @Published private(set) var postProcessingStatusText: String = "Preparando análisis..."
+
+    /// Estado del detector visual en vivo
     @Published private(set) var liveDetectorBanner: String = "Listo para grabar"
     @Published private(set) var liveDetectedEventType: AcousticEventType?
     @Published private(set) var activeSpeakerId: String = "speaker_1"
     @Published private(set) var activeSpeakerPitchHz: Double = 0.0
 
-    /// Vista previa de los segmentos transcritos saliendo en vivo durante la grabación
+    /// Vista previa de los segmentos transcritos, marcadores, locutores y eventos
     @Published private(set) var liveSegments: [TranscriptSegment] = []
     @Published private(set) var liveBookmarks: [RecordingBookmark] = []
     @Published private(set) var liveAcousticEvents: [AcousticEvent] = []
     @Published private(set) var liveSpeakers: [SpeakerProfile] = [SpeakerProfile.createDefault(number: 1)]
+    @Published private(set) var liveSpeakerTurns: [SpeakerTurnMarker] = [SpeakerTurnMarker(timestamp: 0, speakerId: "speaker_1")]
+
+    /// Título borrador sincronizado con la pantalla bloqueada (Live Activity)
+    @Published var liveCustomDraftTitle: String = ""
 
     /// Preferencias de calidad configurables por el usuario
     @Published var selectedFormat: AudioFormatOption = .m4a
@@ -48,12 +59,12 @@ final class AudioRecorderService: ObservableObject {
     private let fileWriteLock = NSLock()
     private var currentFileURL: URL?
     private var currentFileName: String = ""
+    private var hadLiveTranscriptionActiveEntireSession: Bool = false
 
     private let transcriptionService = SpeechTranscriptionService()
     private let diarizationService = SpeakerDiarizationService()
     private let acousticAnalyzer = AcousticEventAnalyzer()
 
-    /// Acumulador de todas las muestras de onda de la grabación para guardar el resumen visual final
     private var fullRecordingWaveform: [Float] = []
     private var highPrecisionTimer: Timer?
     private var lastResumeMachTime: TimeInterval = 0
@@ -61,6 +72,7 @@ final class AudioRecorderService: ObservableObject {
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var latestMeasuredRMS: Float = 0.0
     private var latestSpectralBands: [Float] = Array(repeating: 0.05, count: 28)
+    private var lastTimelineSampleIndex: Int = -1
 
     init() {
         setupServiceCallbacks()
@@ -78,7 +90,9 @@ final class AudioRecorderService: ObservableObject {
             guard let self = self else { return }
             Task { @MainActor in
                 self.liveAcousticEvents.append(event)
-                self.rebuildLiveSegments(with: self.transcriptionService.allCapturedWords)
+                if self.isLiveTranscriptionEnabled {
+                    self.rebuildLiveSegments(with: self.transcriptionService.allCapturedWords)
+                }
             }
         }
 
@@ -87,6 +101,39 @@ final class AudioRecorderService: ObservableObject {
             Task { @MainActor in
                 self.liveDetectorBanner = statusText
                 self.liveDetectedEventType = eventType
+            }
+        }
+
+        LiveActivityManager.shared.onTogglePauseFromLockScreen = { [weak self] in
+            guard let self = self else { return }
+            if self.state == .recording {
+                self.pauseRecording()
+            } else if self.state == .paused {
+                try? self.resumeRecording()
+            }
+        }
+
+        LiveActivityManager.shared.onAddBookmarkFromLockScreen = { [weak self] in
+            guard let self = self else { return }
+            if self.state == .recording || self.state == .paused {
+                self.addLiveBookmark(customLabel: "Marcador desde Pantalla Bloqueada")
+            }
+        }
+    }
+
+    /// Activa o pausa el motor de transcripción en vivo durante la grabación para ahorrar RAM y batería en clases largas.
+    func setLiveTranscriptionEnabled(_ enabled: Bool) {
+        guard isLiveTranscriptionEnabled != enabled else { return }
+        isLiveTranscriptionEnabled = enabled
+
+        if state == .recording {
+            if enabled {
+                transcriptionService.startLiveTranscription(diarizer: diarizationService, offsetSeconds: elapsedTime)
+                liveDetectorBanner = "🎙️ Transcripción en vivo activada"
+            } else {
+                hadLiveTranscriptionActiveEntireSession = false
+                transcriptionService.stopLiveTranscription()
+                liveDetectorBanner = "⚡ Modo Ahorro Activo (Audio ligero en 2º plano)"
             }
         }
     }
@@ -113,15 +160,27 @@ final class AudioRecorderService: ObservableObject {
         self.elapsedTime = 0.0
         self.accumulatedTimeBeforePause = 0.0
         self.lastResumeMachTime = ProcessInfo.processInfo.systemUptime
+        self.lastTimelineSampleIndex = -1
         self.fullRecordingWaveform.removeAll()
+        self.liveTimelineSamples.removeAll()
         self.liveBookmarks.removeAll()
         self.liveAcousticEvents.removeAll()
         self.liveSegments.removeAll()
         self.liveWaveformWindow = Array(repeating: 0.04, count: 96)
         self.liveSpectrumBands = Array(repeating: 0.05, count: 28)
+        self.postProcessingProgress = 0.0
+        self.postProcessingStatusText = "Preparando análisis..."
+
+        // Por defecto, oculto/desactivado al iniciar para ahorrar RAM y batería en clases largas
+        self.isLiveTranscriptionEnabled = false
+        self.hadLiveTranscriptionActiveEntireSession = false
 
         diarizationService.reset()
+        transcriptionService.resetCaptureBuffer()
+        acousticAnalyzer.reset()
+
         liveSpeakers = diarizationService.detectedSpeakers
+        liveSpeakerTurns = diarizationService.speakerTurnMarkers
         activeSpeakerId = diarizationService.currentSpeakerId
 
         let safeTimestamp = ExactDateFormatter.filenameTimestamp(from: exactStart)
@@ -142,7 +201,6 @@ final class AudioRecorderService: ObservableObject {
             recordingFormat = AVAudioFormat(standardFormatWithSampleRate: selectedSampleRate.rawValue, channels: 1)!
         }
 
-        // Crear el archivo de salida en disco (.m4a AAC o .wav PCM) alineado con el formato de entrada del hardware
         let settings = selectedFormat.audioSettings(
             sampleRate: recordingFormat.sampleRate,
             channels: Int(recordingFormat.channelCount)
@@ -157,9 +215,6 @@ final class AudioRecorderService: ObservableObject {
         fileWriteLock.unlock()
 
         acousticAnalyzer.startLiveStreamAnalysis(format: recordingFormat)
-        if permissions.speech {
-            transcriptionService.startLiveTranscription(diarizer: diarizationService)
-        }
 
         inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
@@ -171,8 +226,16 @@ final class AudioRecorderService: ObservableObject {
         try audioEngine.start()
 
         state = .recording
-        liveDetectorBanner = "🎙️ Escuchando en alta fidelidad (\(selectedFormat.shortBadge))"
+        liveDetectorBanner = "⚡ Grabando en modo ahorro (\(selectedFormat.shortBadge))"
         liveDetectedEventType = nil
+
+        LiveActivityManager.shared.startLockScreenActivity(
+            title: liveCustomDraftTitle,
+            startDate: exactStart,
+            formatBadge: selectedFormat.shortBadge,
+            activeSpeaker: "Locutor 1"
+        )
+
         start60FPSTimer()
     }
 
@@ -184,6 +247,17 @@ final class AudioRecorderService: ObservableObject {
         highPrecisionTimer = nil
         state = .paused
         liveDetectorBanner = "⏸️ Grabación en pausa"
+
+        let speakerName = liveSpeakers.first(where: { $0.id == activeSpeakerId })?.displayName ?? "Locutor 1"
+        LiveActivityManager.shared.updateLockScreenProgress(
+            title: liveCustomDraftTitle,
+            startDate: recordingStartDate ?? Date(),
+            elapsedTime: elapsedTime,
+            isPaused: true,
+            activeSpeaker: speakerName,
+            formatBadge: selectedFormat.shortBadge,
+            force: true
+        )
     }
 
     func resumeRecording() throws {
@@ -193,6 +267,17 @@ final class AudioRecorderService: ObservableObject {
         lastResumeMachTime = ProcessInfo.processInfo.systemUptime
         state = .recording
         liveDetectorBanner = "🎙️ Grabación reanudada"
+
+        let speakerName = liveSpeakers.first(where: { $0.id == activeSpeakerId })?.displayName ?? "Locutor 1"
+        LiveActivityManager.shared.updateLockScreenProgress(
+            title: liveCustomDraftTitle,
+            startDate: recordingStartDate ?? Date(),
+            elapsedTime: elapsedTime,
+            isPaused: false,
+            activeSpeaker: speakerName,
+            formatBadge: selectedFormat.shortBadge,
+            force: true
+        )
         start60FPSTimer()
     }
 
@@ -219,15 +304,14 @@ final class AudioRecorderService: ObservableObject {
         return bookmark
     }
 
-    /// Permite indicar manualmente un cambio o nuevo locutor en pleno directo.
     func switchActiveSpeakerManually(toNumber number: Int) {
         let profile = diarizationService.selectOrCreateSpeaker(number: number, at: elapsedTime)
         liveSpeakers = diarizationService.detectedSpeakers
+        liveSpeakerTurns = diarizationService.speakerTurnMarkers
         activeSpeakerId = profile.id
         liveDetectorBanner = "🗣️ Hablando ahora: \(profile.displayName)"
     }
 
-    /// Permite registrar un evento acústico en vivo.
     func triggerAcousticEventMarker(_ type: AcousticEventType) {
         let event = AcousticEvent(
             type: type,
@@ -238,11 +322,17 @@ final class AudioRecorderService: ObservableObject {
         acousticAnalyzer.recordDetectedEvent(event)
     }
 
-    /// Detiene la grabación, cierra el archivo de audio, redirige `AVAudioSession` explícitamente hacia el altavoz principal
-    /// y devuelve el modelo `VoiceRecording` completo con hora exacta hasta el segundo.
-    func stopAndFinalizeRecording(customTitle: String? = nil, initialTags: [TagItem] = []) async -> VoiceRecording? {
+    /// Detiene la grabación, cierra la Live Activity de la pantalla bloqueada, ejecuta el pipeline completo de post-procesamiento
+    /// (dividiendo en fragmentos seguros de 45s) y devuelve el `VoiceRecording` listo para persistir.
+    func stopAndFinalizeRecording(
+        customTitle: String? = nil,
+        initialTags: [TagItem] = [],
+        performFullPostProcessing: Bool = true
+    ) async -> VoiceRecording? {
         guard state == .recording || state == .paused else { return nil }
         state = .finalizing
+        postProcessingProgress = 0.04
+        postProcessingStatusText = "Cerrando flujo de audio de alta fidelidad..."
 
         highPrecisionTimer?.invalidate()
         highPrecisionTimer = nil
@@ -251,10 +341,10 @@ final class AudioRecorderService: ObservableObject {
         audioEngine.stop()
 
         fileWriteLock.lock()
-        outputAudioFile = nil // Fuerza el volcado y cierre limpio del contenedor .m4a / .wav en disco
+        outputAudioFile = nil
         fileWriteLock.unlock()
 
-        // Configurar inmediatamente la sesión de audio hacia el altavoz principal tras finalizar la grabación
+        LiveActivityManager.shared.stopLockScreenActivity()
         try? AudioSessionManager.shared.configureForPlayback()
 
         let finalDuration = max(0.5, elapsedTime)
@@ -270,20 +360,46 @@ final class AudioRecorderService: ObservableObject {
             return nil
         }
 
+        guard performFullPostProcessing else {
+            state = .idle
+            endBackgroundExecutionSafetyTask()
+            return nil
+        }
+
+        // Paso 1: Diarización espectral y análisis de eventos acústicos sobre el archivo completo si estuvo en modo ahorro
+        postProcessingProgress = 0.10
+        postProcessingStatusText = "Analizando voces de locutores (Pitch F0 y timbre)..."
+        diarizationService.analyzeAudioFileOfflineIfNeeded(url: fileURL)
+
+        postProcessingProgress = 0.16
+        postProcessingStatusText = "Detectando eventos acústicos (risas, aplausos, música y pausas)..."
+        if !hadLiveTranscriptionActiveEntireSession {
+            await acousticAnalyzer.analyzeCompleteAudioFileIfNeeded(at: fileURL)
+        }
+
         let capturedWords = transcriptionService.allCapturedWords
         let capturedEvents = acousticAnalyzer.detectedEvents
 
+        // Paso 2: Transcripción completa en fragmentos seguros de 45 segundos
         let postProcessed = await transcriptionService.postProcessRecording(
             audioFileURL: fileURL,
+            totalDuration: finalDuration,
             existingWords: capturedWords,
             diarizer: diarizationService,
-            acousticEvents: capturedEvents
+            acousticEvents: capturedEvents,
+            onProgress: { [weak self] progress, status in
+                self?.postProcessingProgress = progress
+                self?.postProcessingStatusText = status
+            }
         )
+
+        postProcessingProgress = 0.96
+        postProcessingStatusText = "Calculando firma de integridad SHA-256 y guardando..."
 
         let fileSize = Self.queryFileSizeBytes(at: fileURL)
         let sha256 = Self.computeSHA256(at: fileURL)
 
-        let downsampledWaveform = Self.downsampleWaveform(fullRecordingWaveform, targetCount: 160)
+        let downsampledWaveform = Self.downsampleWaveform(fullRecordingWaveform, targetCount: 220)
         let resolvedTitle: String
         if let custom = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
             resolvedTitle = custom
@@ -317,18 +433,19 @@ final class AudioRecorderService: ObservableObject {
         )
         recording.recalculateSpeakerStatistics()
 
+        postProcessingProgress = 1.0
         state = .idle
         endBackgroundExecutionSafetyTask()
         return recording
     }
 
-    // MARK: - Procesamiento de Audio en Tiempo Real (Hilo de Audio -> Disco Síncrono + UI 60 FPS)
+    // MARK: - Procesamiento de Audio en Tiempo Real
 
     private nonisolated func processIncomingAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         let frameLength = Int(buffer.frameLength)
         guard frameLength > 0 else { return }
 
-        // 1. Escribir inmediatamente en el archivo de audio (.m4a o .wav) en el hilo del tap antes de que AVAudioEngine recicle el buffer
+        // 1. Escribir inmediatamente en el archivo de audio (.m4a o .wav) de forma síncrona
         fileWriteLock.lock()
         try? outputAudioFile?.write(from: buffer)
         fileWriteLock.unlock()
@@ -358,24 +475,34 @@ final class AudioRecorderService: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self = self, self.state == .recording else { return }
 
-            // Alimentar reconocimiento de voz en vivo
-            self.transcriptionService.appendAudioBuffer(buffer)
+            // Alimentar reconocimiento de voz en vivo SOLO si el usuario desplegó "Ver transcripción en vivo"
+            if self.isLiveTranscriptionEnabled {
+                self.transcriptionService.appendAudioBuffer(buffer)
+            }
 
-            // Alimentar analizador de eventos acústicos (SoundAnalysis)
-            self.acousticAnalyzer.analyzeBuffer(buffer, at: self.elapsedTime)
+            // Analizador de silencios ligero siempre activo; clasificador ML en vivo solo si está desplegado o cada pocos segundos
+            self.acousticAnalyzer.analyzeBuffer(
+                buffer,
+                at: self.elapsedTime,
+                runMLStream: self.isLiveTranscriptionEnabled
+            )
 
-            // Alimentar diarizador de locutores (Pitch F0 + Centroide Espectral)
+            // Diarizador ligero en DSP (vDSP) para mostrar cambios de locutor en la línea de tiempo CapCut
             let diarizationResult = self.diarizationService.processAudioBuffer(buffer, at: self.elapsedTime)
-            self.activeSpeakerId = diarizationResult.speakerId
+            if self.activeSpeakerId != diarizationResult.speakerId {
+                self.activeSpeakerId = diarizationResult.speakerId
+                self.liveSpeakers = self.diarizationService.detectedSpeakers
+                self.liveSpeakerTurns = self.diarizationService.speakerTurnMarkers
+            }
             self.activeSpeakerPitchHz = diarizationResult.pitchHz
-            self.liveSpeakers = self.diarizationService.detectedSpeakers
 
             if diarizationResult.isVoiceActive && self.liveDetectedEventType == nil {
                 let speakerName = self.liveSpeakers.first(where: { $0.id == diarizationResult.speakerId })?.displayName ?? "Locutor 1"
+                let modeTag = self.isLiveTranscriptionEnabled ? "" : " · ⚡ Ahorro"
                 if diarizationResult.pitchHz > 0 {
-                    self.liveDetectorBanner = "🎙️ Voz activa: \(speakerName) (\(Int(diarizationResult.pitchHz)) Hz)"
+                    self.liveDetectorBanner = "🎙️ \(speakerName) (\(Int(diarizationResult.pitchHz)) Hz)\(modeTag)"
                 } else {
-                    self.liveDetectorBanner = "🎙️ Voz activa: \(speakerName)"
+                    self.liveDetectorBanner = "🎙️ \(speakerName)\(modeTag)"
                 }
             }
 
@@ -401,13 +528,28 @@ final class AudioRecorderService: ObservableObject {
                     self.liveWaveformWindow.removeFirst(self.liveWaveformWindow.count - 96)
                 }
 
+                // Guardar 10 muestras por segundo (cada 0.1s) para la línea de tiempo con zoom tipo CapCut
+                let currentDeciSecond = Int(self.elapsedTime * 10.0)
+                if currentDeciSecond > self.lastTimelineSampleIndex {
+                    self.lastTimelineSampleIndex = currentDeciSecond
+                    self.liveTimelineSamples.append(sample)
+                    self.fullRecordingWaveform.append(sample)
+                }
+
                 for i in 0..<min(self.liveSpectrumBands.count, self.latestSpectralBands.count) {
                     self.liveSpectrumBands[i] = (self.liveSpectrumBands[i] * 0.55) + (self.latestSpectralBands[i] * 0.45)
                 }
 
-                if Int(self.elapsedTime * 60) % 3 == 0 {
-                    self.fullRecordingWaveform.append(sample)
-                }
+                // Actualizar la tarjeta persistente en la pantalla bloqueada cada segundo
+                let speakerName = self.liveSpeakers.first(where: { $0.id == self.activeSpeakerId })?.displayName ?? "Locutor 1"
+                LiveActivityManager.shared.updateLockScreenProgress(
+                    title: self.liveCustomDraftTitle,
+                    startDate: self.recordingStartDate ?? Date(),
+                    elapsedTime: self.elapsedTime,
+                    isPaused: false,
+                    activeSpeaker: speakerName,
+                    formatBadge: self.selectedFormat.shortBadge
+                )
             }
         }
         if let timer = highPrecisionTimer {

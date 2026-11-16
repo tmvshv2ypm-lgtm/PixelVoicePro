@@ -2,7 +2,7 @@ import Foundation
 import Speech
 import AVFoundation
 
-/// Configuración del motor híbrido de transcripción (Apple Speech en vivo + Whisper API / Local Post-Processing).
+/// Configuración del motor híbrido de transcripción (Apple Speech en vivo + Post-procesamiento por fragmentos de 45s + Whisper API).
 struct TranscriptionConfiguration: Codable {
     var localeIdentifier: String = "es-ES"
     var preferOnDeviceRecognition: Bool = true
@@ -28,18 +28,19 @@ struct TranscriptionConfiguration: Codable {
     }
 }
 
-/// Servicio de Transcripción Inteligente en Español con sincronización palabra por palabra (`WordTimestamp`)
-/// y soporte modular para modelos locales (`SFSpeechRecognizer` On-Device) y API compatible con Whisper.
+/// Servicio de Transcripción Inteligente en Español con sincronización palabra por palabra (`WordTimestamp`),
+/// modo de ahorro de batería plegable en vivo y pipeline de post-procesamiento completo por fragmentos seguros de 45 segundos.
 final class SpeechTranscriptionService {
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
 
-    /// Palabras consolidadas de sesiones previas (para grabaciones largas de más de 1 minuto)
+    /// Palabras consolidadas de sesiones previas
     private var committedWords: [WordTimestamp] = []
     /// Palabras de la ventana activa actual de `SFSpeechRecognizer`
     private var currentSessionWords: [WordTimestamp] = []
     private var sessionTimeOffset: TimeInterval = 0.0
+    private(set) var isLiveRecognitionRunning: Bool = false
 
     var configuration: TranscriptionConfiguration = .load()
 
@@ -62,15 +63,18 @@ final class SpeechTranscriptionService {
         }
     }
 
-    /// Inicia la transcripción en vivo recibiendo buffers desde `AVAudioEngine` y consultando el locutor activo en `diarizer`.
-    func startLiveTranscription(diarizer: SpeakerDiarizationService) {
+    func resetCaptureBuffer() {
         stopLiveTranscription()
         committedWords.removeAll()
         currentSessionWords.removeAll()
         sessionTimeOffset = 0.0
+    }
 
+    /// Inicia o reanuda la transcripción en vivo desde el segundo `offsetSeconds`.
+    func startLiveTranscription(diarizer: SpeakerDiarizationService, offsetSeconds: TimeInterval = 0.0) {
+        stopLiveTranscription()
         configureRecognizer(localeIdentifier: configuration.localeIdentifier)
-        startRecognitionSession(diarizer: diarizer, offsetSeconds: 0.0)
+        startRecognitionSession(diarizer: diarizer, offsetSeconds: offsetSeconds)
     }
 
     private func startRecognitionSession(diarizer: SpeakerDiarizationService, offsetSeconds: TimeInterval) {
@@ -87,6 +91,7 @@ final class SpeechTranscriptionService {
 
         self.recognitionRequest = request
         self.sessionTimeOffset = offsetSeconds
+        self.isLiveRecognitionRunning = true
 
         self.recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self = self else { return }
@@ -112,7 +117,6 @@ final class SpeechTranscriptionService {
                         wordDuration = 0.28
                     }
 
-                    // Conservar el speakerId ya asignado a esa palabra o consultar el diarizador acústico
                     let assignedSpeaker: String
                     if idx < existingByIndex.count && abs(existingByIndex[idx].startTime - wordStart) < 0.8 {
                         assignedSpeaker = existingByIndex[idx].speakerId
@@ -144,7 +148,6 @@ final class SpeechTranscriptionService {
             }
 
             if error != nil {
-                // Conservar las palabras ya reconocidas si la ventana de SFSpeechRecognizer rota
                 if !self.currentSessionWords.isEmpty {
                     self.committedWords.append(contentsOf: self.currentSessionWords)
                     self.currentSessionWords.removeAll()
@@ -154,10 +157,13 @@ final class SpeechTranscriptionService {
     }
 
     func appendAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        guard isLiveRecognitionRunning else { return }
         recognitionRequest?.append(buffer)
     }
 
+    /// Detiene el motor de reconocimiento en vivo para ahorrar RAM y batería durante clases largas, conservando lo ya transcrito.
     func stopLiveTranscription() {
+        isLiveRecognitionRunning = false
         recognitionRequest?.endAudio()
         recognitionRequest = nil
         recognitionTask?.cancel()
@@ -169,77 +175,239 @@ final class SpeechTranscriptionService {
         }
     }
 
-    /// Devuelve todas las palabras capturadas con sus marcas de tiempo y locutor asignado.
     var allCapturedWords: [WordTimestamp] {
         committedWords + currentSessionWords
     }
 
-    // MARK: - Post-Procesamiento Inteligente (On-Device + Soporte Modular Whisper API)
+    // MARK: - Post-Procesamiento Completo por Fragmentos Seguros de 45 Segundos (Clases Largas)
 
-    /// Ejecuta el post-procesamiento al finalizar la grabación:
-    /// 1) Si el usuario activó un endpoint Whisper con API Key, consulta el modelo Whisper con granularidad por palabra.
-    /// 2) Aplica refinamiento de puntuación en español, capitalización de inicio de oración y alineación con el diarizador.
+    /// Procesa el archivo de audio completo al finalizar la grabación:
+    /// Divide automáticamente el audio en fragmentos seguros de 45 segundos para superar el límite de tiempo de `SFSpeechRecognizer`,
+    /// alinea cada palabra con la diarización de locutores y los eventos acústicos, y reporta progreso en vivo.
     func postProcessRecording(
         audioFileURL: URL,
+        totalDuration: TimeInterval,
         existingWords: [WordTimestamp],
         diarizer: SpeakerDiarizationService,
-        acousticEvents: [AcousticEvent]
+        acousticEvents: [AcousticEvent],
+        onProgress: (@MainActor (Double, String) -> Void)? = nil
     ) async -> (segments: [TranscriptSegment], engineDescription: String) {
         var finalWords = existingWords
-        var engineLabel = "Apple Speech On-Device (es) + PixelVoice DSP Diarizer"
+        var engineLabel = "Apple Speech On-Device (es) + PixelVoice 45s Chunk Pipeline"
 
-        // Si el usuario configuró Whisper API / Servidor Local Whisper
+        // Determinar cuánto de la grabación ya fue cubierto en vivo vs cuánto falta transcribir del archivo completo
+        let lastCoveredSecond = existingWords.last?.endTime ?? 0.0
+        let needsFullFileChunkAnalysis = existingWords.isEmpty || (totalDuration - lastCoveredSecond > 4.0)
+
         if configuration.enableWhisperPostProcessing,
            !configuration.whisperAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let whisperWords = try? await transcribeWithWhisperEndpoint(audioFileURL: audioFileURL, diarizer: diarizer),
            !whisperWords.isEmpty {
             finalWords = whisperWords
             engineLabel = "Whisper AI (\(configuration.whisperModelName)) + PixelVoice DSP Diarizer"
-        } else if finalWords.isEmpty {
-            // Si no se capturaron palabras en vivo (ej. archivo importado), analizar archivo completo con SFSpeechURLRecognitionRequest
-            if let fileWords = await transcribeAudioFileOffline(url: audioFileURL, diarizer: diarizer), !fileWords.isEmpty {
-                finalWords = fileWords
+        } else if needsFullFileChunkAnalysis {
+            await onProgress?(0.20, "Dividiendo audio en fragmentos seguros de 45s para transcripción completa...")
+            let chunkedWords = await transcribeAudioFileIn45sChunks(
+                url: audioFileURL,
+                totalDuration: totalDuration,
+                diarizer: diarizer,
+                onProgress: onProgress
+            )
+            if !chunkedWords.isEmpty {
+                finalWords = chunkedWords
             }
         }
 
+        await onProgress?(0.92, "Alineando locutores, signos de puntuación y eventos acústicos...")
         let refinedWords = refineSpanishCapitalizationAndPunctuation(words: finalWords)
         let segments = diarizer.buildSpeakerSegments(
             words: refinedWords,
             acousticEvents: acousticEvents
         )
+        await onProgress?(1.0, "¡Procesamiento completado!")
         return (segments, engineLabel)
     }
 
-    /// Transcribe un archivo de audio existente en disco usando `SFSpeechURLRecognitionRequest`.
-    private func transcribeAudioFileOffline(url: URL, diarizer: SpeakerDiarizationService) async -> [WordTimestamp]? {
-        guard let recognizer = speechRecognizer, recognizer.isAvailable else { return nil }
-        let request = SFSpeechURLRecognitionRequest(url: url)
+    /// Divide un archivo de audio de cualquier duración (ej. 2 minutos o 3 horas de clase) en fragmentos seguros de 45 segundos
+    /// para evitar el límite de ~60s de `SFSpeechRecognizer` y transcribir el 100% del audio de principio a fin.
+    private func transcribeAudioFileIn45sChunks(
+        url: URL,
+        totalDuration: TimeInterval,
+        diarizer: SpeakerDiarizationService,
+        onProgress: (@MainActor (Double, String) -> Void)?
+    ) async -> [WordTimestamp] {
+        configureRecognizer(localeIdentifier: configuration.localeIdentifier)
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else { return [] }
+        guard let sourceFile = try? AVAudioFile(forReading: url) else { return [] }
+
+        let format = sourceFile.processingFormat
+        let sampleRate = format.sampleRate
+        let totalFrames = sourceFile.length
+        guard sampleRate > 0, totalFrames > 0 else { return [] }
+
+        let chunkSeconds: TimeInterval = 45.0
+        let framesPerChunk = AVAudioFramePosition(sampleRate * chunkSeconds)
+        let totalChunks = max(1, Int(ceil(Double(totalFrames) / Double(framesPerChunk))))
+
+        var accumulatedWords: [WordTimestamp] = []
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("PixelVoiceChunks_\(UUID().uuidString.prefix(6))", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        for chunkIndex in 0..<totalChunks {
+            let startFrame = AVAudioFramePosition(chunkIndex) * framesPerChunk
+            let remainingFrames = totalFrames - startFrame
+            guard remainingFrames > 0 else { break }
+
+            let currentChunkFrames = min(framesPerChunk, remainingFrames)
+            let chunkStartTimeOffset = Double(startFrame) / sampleRate
+
+            let progressBase = 0.22 + (0.68 * (Double(chunkIndex) / Double(totalChunks)))
+            await onProgress?(
+                progressBase,
+                "Transcribiendo fragmento \(chunkIndex + 1) de \(totalChunks) (\(ExactDateFormatter.standardDuration(chunkStartTimeOffset)))..."
+            )
+
+            // Extraer el fragmento de 45s a un archivo temporal .wav ligero para SFSpeechURLRecognitionRequest
+            let chunkURL = tempDir.appendingPathComponent("chunk_\(chunkIndex).wav")
+            if Self.extractPCMChunk(
+                from: sourceFile,
+                startFrame: startFrame,
+                frameCount: currentChunkFrames,
+                to: chunkURL
+            ) {
+                if let chunkWords = await recognizeSingleChunkURL(
+                    chunkURL,
+                    recognizer: recognizer,
+                    timeOffset: chunkStartTimeOffset,
+                    diarizer: diarizer
+                ) {
+                    accumulatedWords.append(contentsOf: chunkWords)
+                }
+                try? FileManager.default.removeItem(at: chunkURL)
+            }
+        }
+
+        return accumulatedWords
+    }
+
+    private static func extractPCMChunk(
+        from sourceFile: AVAudioFile,
+        startFrame: AVAudioFramePosition,
+        frameCount: AVAudioFramePosition,
+        to destinationURL: URL
+    ) -> Bool {
+        let format = sourceFile.processingFormat
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: format.sampleRate,
+            AVNumberOfChannelsKey: Int(format.channelCount),
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsNonInterleaved: false
+        ]
+
+        guard let destFile = try? AVAudioFile(
+            forWriting: destinationURL,
+            settings: settings,
+            commonFormat: format.commonFormat,
+            interleaved: format.isInterleaved
+        ) else {
+            return false
+        }
+
+        let bufferCapacity: AVAudioFrameCount = 16384
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: bufferCapacity) else {
+            return false
+        }
+
+        sourceFile.framePosition = startFrame
+        var framesRemaining = frameCount
+
+        while framesRemaining > 0 {
+            let framesToRead = AVAudioFrameCount(min(AVAudioFramePosition(bufferCapacity), framesRemaining))
+            do {
+                try sourceFile.read(into: buffer, frameCount: framesToRead)
+                if buffer.frameLength == 0 { break }
+                try destFile.write(from: buffer)
+                framesRemaining -= AVAudioFramePosition(buffer.frameLength)
+            } catch {
+                break
+            }
+        }
+        return true
+    }
+
+    private func recognizeSingleChunkURL(
+        _ chunkURL: URL,
+        recognizer: SFSpeechRecognizer,
+        timeOffset: TimeInterval,
+        diarizer: SpeakerDiarizationService
+    ) async -> [WordTimestamp]? {
+        let request = SFSpeechURLRecognitionRequest(url: chunkURL)
         request.shouldReportPartialResults = false
         if #available(iOS 16.0, *) {
             request.addsPunctuation = true
         }
+        if configuration.preferOnDeviceRecognition && recognizer.supportsOnDeviceRecognition {
+            request.requiresOnDeviceRecognition = true
+        }
 
         return await withCheckedContinuation { continuation in
             var hasResumed = false
-            recognizer.recognitionTask(with: request) { result, error in
-                guard !hasResumed else { return }
-                if let result = result, result.isFinal {
-                    hasResumed = true
-                    let words: [WordTimestamp] = result.bestTranscription.segments.map { seg in
-                        let start = seg.timestamp
-                        let duration = max(0.2, seg.duration)
-                        return WordTimestamp(
-                            word: seg.substring,
-                            startTime: start,
-                            endTime: start + duration,
-                            confidence: seg.confidence > 0 ? seg.confidence : 0.90,
-                            speakerId: diarizer.speakerId(at: start)
+            var latestPartialWords: [WordTimestamp] = []
+
+            let task = recognizer.recognitionTask(with: request) { result, error in
+                if let result = result {
+                    var parsed: [WordTimestamp] = []
+                    for (idx, seg) in result.bestTranscription.segments.enumerated() {
+                        let trimmed = seg.substring.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { continue }
+
+                        let start: TimeInterval
+                        let dur: TimeInterval
+                        if seg.timestamp > 0 || idx == 0 {
+                            start = timeOffset + seg.timestamp
+                            dur = max(0.2, seg.duration)
+                        } else if let prev = parsed.last {
+                            start = prev.endTime + 0.04
+                            dur = 0.25
+                        } else {
+                            start = timeOffset
+                            dur = 0.25
+                        }
+
+                        parsed.append(
+                            WordTimestamp(
+                                word: trimmed,
+                                startTime: start,
+                                endTime: start + dur,
+                                confidence: seg.confidence > 0 ? seg.confidence : 0.92,
+                                speakerId: diarizer.speakerId(at: start)
+                            )
                         )
                     }
-                    continuation.resume(returning: words)
-                } else if error != nil {
+                    latestPartialWords = parsed
+
+                    if result.isFinal && !hasResumed {
+                        hasResumed = true
+                        continuation.resume(returning: parsed)
+                    }
+                } else if error != nil && !hasResumed {
                     hasResumed = true
-                    continuation.resume(returning: nil)
+                    continuation.resume(returning: latestPartialWords.isEmpty ? nil : latestPartialWords)
+                }
+            }
+
+            // Timeout de seguridad por fragmento para nunca bloquear el cierre
+            DispatchQueue.global().asyncAfter(deadline: .now() + 25.0) {
+                if !hasResumed {
+                    hasResumed = true
+                    task.cancel()
+                    continuation.resume(returning: latestPartialWords)
                 }
             }
         }
@@ -311,7 +479,6 @@ final class SpeechTranscriptionService {
         }
     }
 
-    /// Refina la capitalización al inicio de intervención de cada locutor y tras pausas largas.
     private func refineSpanishCapitalizationAndPunctuation(words: [WordTimestamp]) -> [WordTimestamp] {
         guard !words.isEmpty else { return [] }
         var refined = words
@@ -329,7 +496,6 @@ final class SpeechTranscriptionService {
                 }
             }
 
-            // Si la palabra siguiente es de otro locutor o es la última palabra y no tiene signo de puntuación final, añadir punto
             let isLastOfTurn = (i == refined.count - 1) || (refined[i + 1].speakerId != refined[i].speakerId)
             if isLastOfTurn,
                let lastChar = currentWord.last,

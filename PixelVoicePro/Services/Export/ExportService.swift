@@ -34,7 +34,7 @@ enum ExportFormatSelection: String, CaseIterable, Identifiable {
         case .transcriptPlainText:
             return "Archivo .txt universal con marcas de tiempo exactas al segundo, locutores y eventos."
         case .completePackage:
-            return "Incluye el audio original junto con la transcripción en PDF, Markdown y Texto Plano."
+            return "Incluye el audio original junto con la transcripción en PDF, Markdown (.md) y Texto (.txt) lista para Google NotebookLM."
         }
     }
 }

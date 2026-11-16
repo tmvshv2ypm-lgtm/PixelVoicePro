@@ -31,6 +31,7 @@
 		A10000222700000000000001 /* RecordingBoothView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000222700000000000001 /* RecordingBoothView.swift */; };
 		A10000232700000000000001 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000232700000000000001 /* RecordingDetailView.swift */; };
 		A10000242700000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000262700000000000001 /* Assets.xcassets */; };
+		A10000252700000000000001 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000272700000000000001 /* LiveActivityManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +62,7 @@
 		A20000242700000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PixelVoicePro/Resources/Info.plist; sourceTree = "<group>"; };
 		A20000252700000000000001 /* PixelVoicePro.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PixelVoicePro/Resources/PixelVoicePro.entitlements; sourceTree = "<group>"; };
 		A20000262700000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = PixelVoicePro/Resources/Assets.xcassets; sourceTree = "<group>"; };
+		A20000272700000000000001 /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/Audio/LiveActivityManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -74,6 +76,7 @@
 				A20000052700000000000001 /* RecordingModels.swift */,
 				A20000062700000000000001 /* VoiceRecording.swift */,
 				A20000072700000000000001 /* AudioSessionManager.swift */,
+				A20000272700000000000001 /* LiveActivityManager.swift */,
 				A20000082700000000000001 /* AudioRecorderService.swift */,
 				A20000092700000000000001 /* AudioPlayerService.swift */,
 				A20000102700000000000001 /* SpeakerDiarizationService.swift */,
@@ -176,6 +179,7 @@
 				A10000052700000000000001 /* RecordingModels.swift in Sources */,
 				A10000062700000000000001 /* VoiceRecording.swift in Sources */,
 				A10000072700000000000001 /* AudioSessionManager.swift in Sources */,
+				A10000252700000000000001 /* LiveActivityManager.swift in Sources */,
 				A10000082700000000000001 /* AudioRecorderService.swift in Sources */,
 				A10000092700000000000001 /* AudioPlayerService.swift in Sources */,
 				A10000102700000000000001 /* SpeakerDiarizationService.swift in Sources */,

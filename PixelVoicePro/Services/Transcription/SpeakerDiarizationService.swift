@@ -11,6 +11,13 @@ struct VocalFeatureVector: Sendable {
     let zeroCrossingRate: Double
 }
 
+/// Marcador de cambio de locutor en la línea de tiempo estilo CapCut.
+struct SpeakerTurnMarker: Identifiable, Codable, Hashable {
+    var id: UUID = UUID()
+    var timestamp: TimeInterval
+    var speakerId: String
+}
+
 /// Motor de Identificación y Separación de Locutores (Speaker Diarization) basado en análisis acústico DSP (`vDSP`).
 /// Detecta cambios de timbre y frecuencia fundamental ($F_0$) entre hablantes y los agrupa como Locutor 1, Locutor 2, etc.
 final class SpeakerDiarizationService {
@@ -28,8 +35,12 @@ final class SpeakerDiarizationService {
     private var lastSpeakerSwitchTime: TimeInterval = 0.0
     private var lastSpeechActiveTime: TimeInterval = 0.0
 
-    /// Historial cronológico de asignaciones (timestamp -> speakerId) para alinear palabras de Speech/Whisper.
+    /// Historial cronológico de asignaciones (timestamp -> speakerId) para alinear palabras y pintar en la línea de tiempo CapCut.
     private var timelineAssignments: [(timestamp: TimeInterval, speakerId: String)] = []
+
+    var speakerTurnMarkers: [SpeakerTurnMarker] {
+        timelineAssignments.map { SpeakerTurnMarker(timestamp: $0.timestamp, speakerId: $0.speakerId) }
+    }
 
     /// Umbral mínimo de energía RMS para considerar que hay voz activa
     private let voiceActivityThreshold: Float = 0.014
@@ -164,6 +175,34 @@ final class SpeakerDiarizationService {
             }
         }
         return matched
+    }
+
+    /// Escanea un archivo de audio guardado en disco para extraer cambios de locutor (Pitch F0 y centroide espectral)
+    /// cuando la grabación se realizó en modo de ahorro de batería sin análisis continuo en vivo.
+    func analyzeAudioFileOfflineIfNeeded(url: URL) {
+        guard timelineAssignments.count <= 1 else { return }
+        guard let audioFile = try? AVAudioFile(forReading: url) else { return }
+        let format = audioFile.processingFormat
+        let sampleRate = format.sampleRate
+        let totalFrames = audioFile.length
+        guard sampleRate > 0, totalFrames > 2048 else { return }
+
+        let windowSize: AVAudioFrameCount = 2048
+        let stepFrames = AVAudioFramePosition(sampleRate * 0.25) // Muestrear cada 250ms para velocidad extrema en clases largas
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: windowSize) else { return }
+
+        var frameCursor: AVAudioFramePosition = 0
+        while frameCursor + AVAudioFramePosition(windowSize) < totalFrames {
+            audioFile.framePosition = frameCursor
+            do {
+                try audioFile.read(into: buffer, frameCount: windowSize)
+                let timestamp = Double(frameCursor) / sampleRate
+                _ = processAudioBuffer(buffer, at: timestamp)
+            } catch {
+                break
+            }
+            frameCursor += stepFrames
+        }
     }
 
     // MARK: - Algoritmo de Clustering Online con Histéresis Acústica

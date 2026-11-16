@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Panel de configuración de calidad de grabación (`.m4a` AAC / `.wav` PCM) y motor híbrido de IA (Apple Speech + Whisper).
+/// Panel de configuración de calidad de grabación (`.m4a` AAC / `.wav` PCM), almacenamiento de la biblioteca
+/// y motor híbrido de IA (Apple Speech + Whisper).
 struct RecordingSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject var viewModel: AppViewModel
     @ObservedObject var recorderService: AudioRecorderService
     @State private var transcriptionConfig: TranscriptionConfiguration = .load()
 
@@ -18,6 +20,24 @@ struct RecordingSettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Almacenamiento y Biblioteca") {
+                    HStack {
+                        Label("Notas de voz guardadas", systemImage: "waveform.circle.fill")
+                        Spacer()
+                        Text("\(viewModel.recordings.count) nota(s)")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(PixelTheme.accentBlue)
+                    }
+
+                    HStack {
+                        Label("Espacio total ocupado", systemImage: "internaldrive.fill")
+                        Spacer()
+                        Text(viewModel.formattedTotalStorageUsed)
+                            .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section {
                     Picker("Formato de Grabación", selection: $recorderService.selectedFormat) {
                         ForEach(AudioFormatOption.allCases) { format in
@@ -92,7 +112,7 @@ struct RecordingSettingsSheet: View {
                     }
                 }
             }
-            .navigationTitle("Ajustes de PixelVoice Pro")
+            .navigationTitle("Ajustes")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

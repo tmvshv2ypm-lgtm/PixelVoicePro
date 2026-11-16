@@ -114,7 +114,7 @@ struct RecordingBoothView: View {
         }
     }
 
-    // MARK: - 1. Cabecera con Fecha y Hora Exacta de Inicio
+    // MARK: - 1. Cabecera con Fecha y Hora Exacta de Inicio (Sin etiqueta técnica M4A · AAC · 48kHz)
 
     private func topExactMetadataBanner(contentWidth: CGFloat) -> some View {
         VStack(spacing: 6) {
@@ -132,14 +132,7 @@ struct RecordingBoothView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
 
-                Spacer(minLength: 4)
-
-                Text("\(recorderService.selectedFormat.shortBadge) · \(Int(recorderService.selectedSampleRate.rawValue / 1000))kHz")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .lineLimit(1)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Color.primary.opacity(0.08), in: Capsule())
+                Spacer()
             }
 
             HStack(spacing: 8) {
@@ -147,6 +140,7 @@ struct RecordingBoothView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 TextField("Título de la clase/nota (se muestra en pantalla bloqueada)...", text: $recorderService.liveCustomDraftTitle)
+                    .submitLabel(.done)
                     .font(.caption.weight(.semibold))
             }
             .padding(.horizontal, 10)

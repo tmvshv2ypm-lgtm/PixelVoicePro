@@ -404,9 +404,7 @@ final class AudioRecorderService: ObservableObject {
         if let custom = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
             resolvedTitle = custom
         } else {
-            let period = DayPeriod.from(date: exactStartDate).rawValue
-            let timeStr = ExactDateFormatter.exactTimeOnly(from: exactStartDate)
-            resolvedTitle = "Grabación de la \(period.lowercased()) (\(timeStr))"
+            resolvedTitle = "__AUTO_SEQUENTIAL_TITLE__"
         }
 
         let recording = VoiceRecording(

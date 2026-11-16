@@ -62,7 +62,12 @@ final class AppViewModel: ObservableObject {
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         if let fetched = try? context.fetch(descriptor) {
-            for rec in fetched {
+            // Ordenar de la más antigua a la más reciente para numerar secuencialmente cualquier título automático antiguo
+            let chronological = fetched.sorted { $0.createdAt < $1.createdAt }
+            for (idx, rec) in chronological.enumerated() {
+                if rec.title.hasPrefix("Grabación de la ") || rec.title == "__AUTO_SEQUENTIAL_TITLE__" {
+                    rec.title = "Grabación \(idx + 1)"
+                }
                 RecordingStorageService.ensurePlayableAudioFileExists(for: rec)
             }
             try? context.save()
@@ -70,7 +75,15 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    func nextSequentialTitle() -> String {
+        let nextNumber = recordings.count + 1
+        return "Grabación \(nextNumber)"
+    }
+
     func insertNewRecording(_ recording: VoiceRecording, presentQuickTitleEditor: Bool = true) {
+        if recording.title.hasPrefix("Grabación de la ") || recording.title == "__AUTO_SEQUENTIAL_TITLE__" {
+            recording.title = nextSequentialTitle()
+        }
         if let context = modelContext {
             context.insert(recording)
             try? context.save()

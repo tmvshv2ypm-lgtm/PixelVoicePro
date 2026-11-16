@@ -1,59 +1,61 @@
 import SwiftUI
+import UIKit
 
 /// Vista 1 (Dashboard / Lista Principal):
-/// Incluye buscador global profundo con salto a minuto exacto, filtros por etiquetas de colores y franja horaria,
-/// agrupación cronológica estricta con formato `DD/MM/YYYY - HH:MM:SS AM/PM`, renombrado rápido y botón flotante de grabación.
+/// Diseño limpio estilo Apple Mail con filtros colapsables por ícono, buscador global sin bloqueo de teclado,
+/// tarjetas minimalistas con fecha y hora exacta al segundo (`DD/MM/YYYY - HH:MM:SS AM/PM`) y botón limpio "Nueva Grabación".
 struct DashboardView: View {
     @ObservedObject var viewModel: AppViewModel
     @ObservedObject var recorderService: AudioRecorderService
 
+    @FocusState private var isSearchFieldFocused: Bool
     @State private var recordingToExport: VoiceRecording?
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // 1. Cabecera de Estado y Almacenamiento
-                        dashboardHeaderMetrics
-
-                        // 2. Buscador Global Profundo (Busca dentro de todas las transcripciones y muestra minuto exacto)
+                    VStack(alignment: .leading, spacing: 14) {
+                        // 1. Buscador Global Profundo con gestión limpia de foco de teclado
                         globalSearchBarSection
 
-                        // 3. Filtros por Etiquetas de Colores y Franja Horaria (Mañana / Tarde / Noche)
-                        tagAndPeriodFiltersSection
+                        // 2. Barras de Filtros Desplegables Estilo Apple Mail (Categorías y Horario)
+                        appleMailStyleFiltersSection
 
-                        // 4. Si hay consulta activa en el Buscador Global, mostrar tarjetas de coincidencia exacta al segundo
+                        // 3. Si hay consulta activa en el Buscador Global, mostrar tarjetas de coincidencia exacta al segundo
                         if !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             globalDeepMatchesSection
                         }
 
-                        // 5. Listado Principal Agrupado Cronológicamente con Fecha y Hora Exacta hasta el Segundo
+                        // 4. Listado Principal Agrupado Cronológicamente con Fecha y Hora Exacta hasta el Segundo
                         chronologicalRecordingsListSection
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 120) // Espacio para el botón flotante de grabación
+                    .padding(.top, 6)
+                    .padding(.bottom, 110)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        dismissKeyboard()
+                    }
                 }
+                .scrollDismissesKeyboard(.immediately)
 
-                // 6. Botón Flotante Grande y Accesible para Iniciar Nueva Grabación al Instante
+                // 5. Botón Flotante Inferior Limpio: "Nueva Grabación"
                 floatingRecordButtonBar
             }
             .navigationTitle("PixelVoice Pro")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        dismissKeyboard()
                         viewModel.isShowingSettingsSheet = true
                     } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "slider.horizontal.3")
-                            Text(recorderService.selectedFormat.rawValue.uppercased())
-                                .font(.caption2.weight(.bold))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.primary.opacity(0.08), in: Capsule())
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.subheadline.weight(.bold))
+                            .frame(width: 34, height: 34)
+                            .background(Color.primary.opacity(0.08), in: Circle())
                     }
+                    .accessibilityLabel("Ajustes")
                 }
             }
             .navigationDestination(item: $viewModel.activeNavigationTarget) { target in
@@ -65,6 +67,9 @@ struct DashboardView: View {
                         initialSearchKeyword: target.highlightKeyword
                     )
                 }
+            }
+            .onChange(of: viewModel.activeNavigationTarget) { _, _ in
+                dismissKeyboard()
             }
             .fullScreenCover(isPresented: $viewModel.isShowingRecordingBooth) {
                 RecordingBoothView(
@@ -79,36 +84,20 @@ struct DashboardView: View {
                 ExportOptionsSheet(recording: rec)
             }
             .sheet(isPresented: $viewModel.isShowingSettingsSheet) {
-                RecordingSettingsSheet(recorderService: recorderService)
+                RecordingSettingsSheet(
+                    viewModel: viewModel,
+                    recorderService: recorderService
+                )
             }
         }
+    }
+
+    private func dismissKeyboard() {
+        isSearchFieldFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     // MARK: - Subvistas del Dashboard
-
-    private var dashboardHeaderMetrics: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("BIBLIOTECA DE PRECISIÓN CRONOLÓGICA")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(PixelTheme.accentBlue)
-                Text("\(viewModel.recordings.count) notas · \(viewModel.formattedTotalStorageUsed) en total")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            HStack(spacing: 4) {
-                Image(systemName: "clock.fill")
-                    .font(.caption2)
-                    .foregroundStyle(PixelTheme.successEmerald)
-                Text(ExactDateFormatter.exactTimeOnly(from: Date()))
-                    .font(.system(.caption2, design: .monospaced).weight(.bold))
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(Color.primary.opacity(0.06), in: Capsule())
-        }
-    }
 
     private var globalSearchBarSection: some View {
         HStack(spacing: 10) {
@@ -116,19 +105,31 @@ struct DashboardView: View {
                 .foregroundStyle(PixelTheme.accentBlue)
                 .font(.body.weight(.semibold))
 
-            TextField("Buscar palabra en todas las notas, locutores o risas...", text: $viewModel.globalSearchQuery)
+            TextField("Buscar palabra en todas las notas...", text: $viewModel.globalSearchQuery)
+                .focused($isSearchFieldFocused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .submitLabel(.search)
+                .onSubmit {
+                    dismissKeyboard()
+                }
                 .font(.subheadline)
 
             if !viewModel.globalSearchQuery.isEmpty {
                 Button {
                     viewModel.globalSearchQuery = ""
+                    dismissKeyboard()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+            } else if isSearchFieldFocused {
+                Button("Listo") {
+                    dismissKeyboard()
+                }
+                .font(.caption.weight(.bold))
+                .foregroundStyle(PixelTheme.accentBlue)
             }
         }
         .padding(.horizontal, 14)
@@ -140,79 +141,80 @@ struct DashboardView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(
-                    viewModel.globalSearchQuery.isEmpty ? Color.clear : PixelTheme.accentBlue.opacity(0.55),
+                    isSearchFieldFocused || !viewModel.globalSearchQuery.isEmpty
+                        ? PixelTheme.accentBlue.opacity(0.55)
+                        : Color.clear,
                     lineWidth: 1.2
                 )
         )
     }
 
-    private var tagAndPeriodFiltersSection: some View {
+    private var appleMailStyleFiltersSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Filtro por Etiquetas de Colores
+            // Fila 1 (Categorías): Comportamiento colapsable estilo Apple Mail
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    FilterChipButton(
+                    AppleMailFilterPill(
                         title: "Todas",
                         icon: "tray.full.fill",
                         color: PixelTheme.accentBlue,
                         isSelected: viewModel.selectedTagFilter == nil && !viewModel.filterFavoritesOnly
                     ) {
-                        viewModel.selectedTagFilter = nil
-                        viewModel.filterFavoritesOnly = false
+                        dismissKeyboard()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+                            viewModel.selectedTagFilter = nil
+                            viewModel.filterFavoritesOnly = false
+                        }
                     }
 
-                    FilterChipButton(
+                    AppleMailFilterPill(
                         title: "Favoritas",
                         icon: "star.fill",
                         color: PixelTheme.bookmarkAmber,
                         isSelected: viewModel.filterFavoritesOnly
                     ) {
-                        viewModel.filterFavoritesOnly.toggle()
+                        dismissKeyboard()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+                            viewModel.filterFavoritesOnly.toggle()
+                        }
                     }
 
                     ForEach(viewModel.availableTags) { tag in
-                        FilterChipButton(
+                        AppleMailFilterPill(
                             title: tag.name,
                             icon: tag.iconName,
                             color: tag.color,
                             isSelected: viewModel.selectedTagFilter?.id == tag.id
                         ) {
-                            if viewModel.selectedTagFilter?.id == tag.id {
-                                viewModel.selectedTagFilter = nil
-                            } else {
-                                viewModel.selectedTagFilter = tag
+                            dismissKeyboard()
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+                                if viewModel.selectedTagFilter?.id == tag.id {
+                                    viewModel.selectedTagFilter = nil
+                                } else {
+                                    viewModel.selectedTagFilter = tag
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // Filtro rápido por Franja del Día (Mañana / Tarde / Noche) para distinguir varias notas del mismo día
+            // Fila 2 (Horario: Mañana / Tarde / Noche): Sin la palabra "Franja:" y colapsable estilo Apple Mail
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    Text("Franja:")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
-
                     ForEach(DayPeriod.allCases) { period in
                         let selected = viewModel.filterDayPeriod == period
-                        Button {
-                            viewModel.filterDayPeriod = selected ? nil : period
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: period.iconName)
-                                Text(period.rawValue)
+                        AppleMailFilterPill(
+                            title: period.rawValue,
+                            icon: period.iconName,
+                            color: Color(hex: period.badgeColorHex),
+                            isSelected: selected
+                        ) {
+                            dismissKeyboard()
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+                                viewModel.filterDayPeriod = selected ? nil : period
                             }
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .foregroundStyle(selected ? .white : Color(hex: period.badgeColorHex))
-                            .background(
-                                Capsule()
-                                    .fill(selected ? Color(hex: period.badgeColorHex) : Color(hex: period.badgeColorHex).opacity(0.14))
-                            )
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -224,7 +226,7 @@ struct DashboardView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label(
-                    "Coincidencias Exactas en el Texto (\(matches.count))",
+                    "Coincidencias Exactas (\(matches.count))",
                     systemImage: "text.magnifyingglass"
                 )
                 .font(.caption.weight(.bold))
@@ -252,6 +254,7 @@ struct DashboardView: View {
             } else {
                 ForEach(matches.prefix(12)) { match in
                     Button {
+                        dismissKeyboard()
                         viewModel.openRecordingFromSearchMatch(match)
                     } label: {
                         VStack(alignment: .leading, spacing: 6) {
@@ -263,7 +266,6 @@ struct DashboardView: View {
 
                                 Spacer()
 
-                                // Muestra el minuto y segundo exacto en que se pronunció la palabra
                                 HStack(spacing: 4) {
                                     Image(systemName: "play.fill")
                                         .font(.system(size: 8))
@@ -317,9 +319,9 @@ struct DashboardView: View {
                     Image(systemName: "waveform.badge.mic")
                         .font(.system(size: 44))
                         .foregroundStyle(PixelTheme.accentBlue.opacity(0.7))
-                    Text("No hay grabaciones que coincidan con el filtro")
+                    Text("No hay grabaciones disponibles")
                         .font(.headline)
-                    Text("Pulsa el botón rojo inferior para grabar una nueva nota de voz con fecha y hora exacta al segundo.")
+                    Text("Pulsa el botón rojo inferior para iniciar una nueva grabación.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -329,7 +331,6 @@ struct DashboardView: View {
             } else {
                 ForEach(groups) { group in
                     VStack(alignment: .leading, spacing: 12) {
-                        // Cabecera de agrupación por fecha exacta (nunca dice "Hoy" ni "Ayer" sin fecha completa)
                         HStack {
                             Image(systemName: "calendar.badge.clock")
                                 .foregroundStyle(PixelTheme.accentBlue)
@@ -348,15 +349,18 @@ struct DashboardView: View {
                             RecordingListCardView(
                                 recording: recording,
                                 onOpen: {
+                                    dismissKeyboard()
                                     viewModel.openRecording(recording)
                                 },
                                 onQuickRenameAndTag: {
+                                    dismissKeyboard()
                                     viewModel.recordingPendingQuickEdit = recording
                                 },
                                 onToggleFavorite: {
                                     viewModel.toggleFavorite(recording)
                                 },
                                 onExport: {
+                                    dismissKeyboard()
                                     recordingToExport = recording
                                 },
                                 onDelete: {
@@ -373,26 +377,24 @@ struct DashboardView: View {
     private var floatingRecordButtonBar: some View {
         HStack {
             Button {
+                dismissKeyboard()
                 viewModel.isShowingRecordingBooth = true
             } label: {
                 HStack(spacing: 12) {
                     ZStack {
                         Circle()
                             .fill(Color.white.opacity(0.24))
-                            .frame(width: 36, height: 36)
+                            .frame(width: 34, height: 34)
                         Circle()
                             .fill(Color.white)
-                            .frame(width: 16, height: 16)
+                            .frame(width: 14, height: 14)
                     }
 
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Nueva Grabación Inteligente")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(.white)
-                        Text("Transcripción en vivo · Diarización · SoundAnalysis")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.88))
-                    }
+                    Spacer()
+
+                    Text("Nueva Grabación")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.white)
 
                     Spacer()
 
@@ -401,7 +403,7 @@ struct DashboardView: View {
                         .foregroundStyle(.white)
                 }
                 .padding(.horizontal, 18)
-                .padding(.vertical, 13)
+                .padding(.vertical, 14)
                 .background(
                     LinearGradient(
                         colors: [PixelTheme.recordRed, Color(hex: "#DC2626")],
@@ -419,7 +421,7 @@ struct DashboardView: View {
     }
 }
 
-// MARK: - Tarjeta Individual de Grabación con Formato Obligatorio DD/MM/YYYY - HH:MM:SS AM/PM
+// MARK: - Tarjeta Individual de Grabación Limpia (Formato DD/MM/YYYY - HH:MM:SS AM/PM + Ícono de Franja + Duración)
 
 private struct RecordingListCardView: View {
     let recording: VoiceRecording
@@ -431,7 +433,7 @@ private struct RecordingListCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Fila 1: Título + Botones de Renombrado Rápido, Favorito y Menú
+            // Fila 1: Título Secuencial Limpio (ej. "Grabación 1") + Botones de Acción
             HStack(alignment: .top, spacing: 8) {
                 Button(action: onOpen) {
                     Text(recording.title)
@@ -444,7 +446,6 @@ private struct RecordingListCardView: View {
 
                 Spacer()
 
-                // Botón de un toque para renombrar y asignar etiquetas de color rápidamente
                 Button(action: onQuickRenameAndTag) {
                     Image(systemName: "pencil.and.outline")
                         .font(.subheadline.weight(.semibold))
@@ -488,7 +489,7 @@ private struct RecordingListCardView: View {
                 }
             }
 
-            // Fila 2 (PRIORIDAD MÁXIMA): Fecha y Hora Exacta hasta el Segundo: DD/MM/YYYY - HH:MM:SS AM/PM
+            // Fila 2: Fecha y Hora Exacta hasta el Segundo (DD/MM/YYYY - HH:MM:SS AM/PM) + Puro Ícono de Franja Horaria (☀️ / 🌅 / 🌙)
             HStack(spacing: 8) {
                 HStack(spacing: 5) {
                     Image(systemName: "clock.fill")
@@ -497,41 +498,27 @@ private struct RecordingListCardView: View {
                     Text(recording.formattedExactCreationDate)
                         .font(.system(.caption, design: .monospaced).weight(.bold))
                         .foregroundStyle(.primary)
+                        .lineLimit(1)
                 }
                 .padding(.horizontal, 9)
-                .padding(.vertical, 4)
+                .padding(.vertical, 5)
                 .background(PixelTheme.accentBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
-                // Etiqueta de franja del día (Mañana, Tarde, Noche)
-                HStack(spacing: 4) {
-                    Image(systemName: recording.dayPeriod.iconName)
-                    Text(recording.dayPeriod.rawValue)
-                }
-                .font(.caption2.weight(.bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color(hex: recording.dayPeriod.badgeColorHex).opacity(0.16), in: Capsule())
-                .foregroundStyle(Color(hex: recording.dayPeriod.badgeColorHex))
+                // Únicamente el ícono de la franja horaria (sin el texto "Mañana / Tarde / Noche")
+                Image(systemName: recording.dayPeriod.iconName)
+                    .font(.caption.weight(.bold))
+                    .frame(width: 28, height: 28)
+                    .background(Color(hex: recording.dayPeriod.badgeColorHex).opacity(0.16), in: Circle())
+                    .foregroundStyle(Color(hex: recording.dayPeriod.badgeColorHex))
 
                 Spacer()
             }
 
-            // Fila 3: Metadatos Exactos de Duración, Peso del Archivo y Formato
+            // Fila 3: Únicamente la Duración Exacta (sin peso ni formato técnico exterior)
             HStack(spacing: 12) {
                 Label(recording.formattedPreciseDuration, systemImage: "waveform")
                     .font(.system(.caption, design: .monospaced).weight(.semibold))
                     .foregroundStyle(.primary)
-
-                Label(recording.formattedFileSize, systemImage: "internaldrive.fill")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-
-                Text(recording.audioFormat.shortBadge)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
-                    .foregroundStyle(.secondary)
 
                 Spacer()
 
@@ -542,7 +529,7 @@ private struct RecordingListCardView: View {
                 }
             }
 
-            // Fila 4: Mini Onda de Audio con colores de eventos acústicos
+            // Fila 4: Mini Onda de Audio + Extracto de Transcripción
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 8) {
                     CompactCardWaveformPreview(
@@ -551,7 +538,6 @@ private struct RecordingListCardView: View {
                         duration: recording.duration
                     )
 
-                    // Vista previa de la transcripción
                     if !recording.fullTranscriptText.isEmpty {
                         Text(recording.fullTranscriptText)
                             .font(.caption)
@@ -563,10 +549,9 @@ private struct RecordingListCardView: View {
             }
             .buttonStyle(.plain)
 
-            // Fila 5: Chips de Etiquetas de Color, Locutores y Eventos Acústicos ([😂 Risas], [🎵 Música])
+            // Fila 5: Chips de Etiquetas de Color, Locutores y Eventos Acústicos
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    // Etiquetas de color
                     ForEach(recording.tags) { tag in
                         HStack(spacing: 4) {
                             Image(systemName: tag.iconName)
@@ -579,7 +564,6 @@ private struct RecordingListCardView: View {
                         .foregroundStyle(tag.color)
                     }
 
-                    // Locutores identificados
                     ForEach(recording.speakers) { speaker in
                         HStack(spacing: 4) {
                             Circle()
@@ -594,7 +578,6 @@ private struct RecordingListCardView: View {
                         .foregroundStyle(speaker.color)
                     }
 
-                    // Eventos acústicos detectados (Risas, Aplausos, Música, Pausas)
                     ForEach(recording.acousticEvents.prefix(4)) { event in
                         Text(event.compactBadgeLabel)
                             .font(.system(size: 10, weight: .bold))
@@ -619,7 +602,9 @@ private struct RecordingListCardView: View {
     }
 }
 
-private struct FilterChipButton: View {
+/// Píldora de filtro desplegable estilo Apple Mail:
+/// Muestra [Ícono + Texto] únicamente cuando está activa/seleccionada; cuando está inactiva muestra solo [Ícono].
+private struct AppleMailFilterPill: View {
     let title: String
     let icon: String
     let color: Color
@@ -628,22 +613,27 @@ private struct FilterChipButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: isSelected ? 6 : 0) {
                 Image(systemName: icon)
-                    .font(.caption2.weight(.bold))
-                Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.bold))
+
+                if isSelected {
+                    Text(title)
+                        .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                }
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
+            .padding(.horizontal, isSelected ? 14 : 12)
+            .padding(.vertical, 8)
             .foregroundStyle(isSelected ? .white : color)
             .background(
                 Capsule()
-                    .fill(isSelected ? color : color.opacity(0.13))
+                    .fill(isSelected ? color : Color.primary.opacity(0.08))
             )
             .overlay(
                 Capsule()
-                    .strokeBorder(color.opacity(0.35), lineWidth: 1)
+                    .strokeBorder(isSelected ? color : Color.primary.opacity(0.12), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)

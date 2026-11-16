@@ -19,6 +19,7 @@ struct RecordingDetailView: View {
 
     @StateObject private var playerService = AudioPlayerService()
 
+    @FocusState private var isLocalSearchFocused: Bool
     @State private var selectedTab: DetailTab = .transcript
     @State private var localSearchQuery: String = ""
     @State private var currentSearchHitIndex: Int = 0
@@ -140,7 +141,7 @@ struct RecordingDetailView: View {
                 Spacer()
             }
 
-            // Fecha y hora exacta hasta el segundo obligatoria debajo del título
+            // Fecha y hora exacta hasta el segundo obligatoria debajo del título (sin peso ni formato técnico repetido)
             HStack(spacing: 8) {
                 HStack(spacing: 4) {
                     Image(systemName: "calendar.badge.clock")
@@ -151,18 +152,13 @@ struct RecordingDetailView: View {
                         .foregroundStyle(.primary)
                 }
 
-                Label(recording.dayPeriod.rawValue, systemImage: recording.dayPeriod.iconName)
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(Color(hex: recording.dayPeriod.badgeColorHex).opacity(0.16), in: Capsule())
+                Image(systemName: recording.dayPeriod.iconName)
+                    .font(.caption.weight(.bold))
+                    .frame(width: 24, height: 24)
+                    .background(Color(hex: recording.dayPeriod.badgeColorHex).opacity(0.16), in: Circle())
                     .foregroundStyle(Color(hex: recording.dayPeriod.badgeColorHex))
 
                 Spacer()
-
-                Text("\(recording.formattedFileSize) · \(recording.audioFormat.shortBadge)")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
             }
 
             // Etiquetas de color activas
@@ -199,9 +195,14 @@ struct RecordingDetailView: View {
                     .foregroundStyle(PixelTheme.accentBlue)
 
                 TextField("Buscar palabra en esta grabación...", text: $localSearchQuery)
+                    .focused($isLocalSearchFocused)
                     .font(.caption)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .onSubmit {
+                        isLocalSearchFocused = false
+                    }
                     .onChange(of: localSearchQuery) { _, _ in
                         currentSearchHitIndex = 0
                     }
@@ -320,6 +321,10 @@ struct RecordingDetailView: View {
                     }
                 }
                 .padding(16)
+            }
+            .scrollDismissesKeyboard(.immediately)
+            .onTapGesture {
+                isLocalSearchFocused = false
             }
             .onChange(of: playerService.activeSegmentId) { _, newSegId in
                 if let targetId = newSegId, playerService.isPlaying {

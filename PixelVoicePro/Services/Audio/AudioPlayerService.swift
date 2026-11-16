@@ -3,7 +3,8 @@ import AVFoundation
 import Combine
 
 /// Motor de Reproducción Interactiva Pro con sincronización Karaoke a 60 Hz,
-/// control de velocidad (0.5x - 2.0x), saltos precisos (-10s, -5s, +5s, +10s) y "Saltar Silencios" automático.
+/// salida forzada al altavoz principal inferior del iPhone, control de velocidad (0.5x - 2.0x),
+/// saltos precisos (-10s, -5s, +5s, +10s) y "Saltar Silencios" automático.
 @MainActor
 final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying: Bool = false
@@ -29,21 +30,41 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     private var currentRecording: VoiceRecording?
     private var currentAudioURL: URL?
 
-    /// Carga una grabación y su archivo de audio desde disco dejándola lista para reproducción instantánea.
+    /// Configura explícitamente `AVAudioSession` para forzar la salida de audio por el altavoz principal del iPhone.
+    private func forceSpeakerOutputAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.overrideOutputAudioPort(.speaker)
+            try session.setActive(true)
+        } catch {
+            print("Error configurando AVAudioSession hacia el altavoz principal: \(error)")
+        }
+    }
+
+    /// Carga una grabación y verifica que su archivo de audio exista y sea reproducible desde `FileManager`.
     func loadRecording(_ recording: VoiceRecording, audioFileURL: URL) {
         stop()
         self.currentRecording = recording
-        self.currentAudioURL = audioFileURL
         self.duration = max(0.1, recording.duration)
         self.currentTime = 0.0
         self.totalSilenceSavedSeconds = 0.0
 
-        if FileManager.default.fileExists(atPath: audioFileURL.path) {
+        // Verificar que el archivo exista y tenga contenido de audio válido en FileManager
+        let resolvedURL = RecordingStorageService.ensurePlayableAudioFileExists(
+            for: recording,
+            expectedURL: audioFileURL
+        )
+        self.currentAudioURL = resolvedURL
+
+        forceSpeakerOutputAudioSession()
+
+        if FileManager.default.fileExists(atPath: resolvedURL.path) {
             do {
-                try AudioSessionManager.shared.configureForPlayback()
-                let player = try AVAudioPlayer(contentsOf: audioFileURL)
+                let player = try AVAudioPlayer(contentsOf: resolvedURL)
                 player.delegate = self
                 player.enableRate = true
+                player.volume = 1.0
                 player.rate = playbackSpeed.rawValue
                 player.prepareToPlay()
                 self.audioPlayer = player
@@ -51,6 +72,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
                     self.duration = player.duration
                 }
             } catch {
+                print("Error inicializando AVAudioPlayer: \(error)")
                 self.audioPlayer = nil
             }
         }
@@ -66,12 +88,34 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     }
 
     func play() {
-        try? AudioSessionManager.shared.configureForPlayback()
+        // Configurar explícitamente la ruta de audio hacia el altavoz principal justo antes de iniciar cualquier reproducción
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.overrideOutputAudioPort(.speaker)
+            try session.setActive(true)
+        } catch {
+            print("Error configurando AVAudioSession en play(): \(error)")
+        }
+
         if currentTime >= duration - 0.05 {
             seek(to: 0.0, autoPlay: false)
         }
 
+        if audioPlayer == nil, let recording = currentRecording {
+            let fallbackURL = currentAudioURL ?? RecordingStorageService.audioFileURL(for: recording.audioFileName)
+            let validURL = RecordingStorageService.ensurePlayableAudioFileExists(for: recording, expectedURL: fallbackURL)
+            if let recreatedPlayer = try? AVAudioPlayer(contentsOf: validURL) {
+                recreatedPlayer.delegate = self
+                recreatedPlayer.enableRate = true
+                recreatedPlayer.volume = 1.0
+                recreatedPlayer.prepareToPlay()
+                self.audioPlayer = recreatedPlayer
+            }
+        }
+
         if let player = audioPlayer {
+            player.volume = 1.0
             player.rate = playbackSpeed.rawValue
             player.currentTime = currentTime
             player.play()
@@ -143,7 +187,6 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         if let player = audioPlayer, player.isPlaying {
             currentTime = player.currentTime
         } else {
-            // Avance de reloj de respaldo si el contenedor está en modo simulación o finalizando
             currentTime += delta * Double(playbackSpeed.rawValue)
             if currentTime >= duration {
                 currentTime = duration
@@ -181,7 +224,6 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         guard let recording = currentRecording else { return }
         let segments = recording.segments
 
-        // 1. Encontrar segmento activo y palabra exacta activa
         var matchedSegmentId: UUID?
         var matchedWordId: UUID?
         var matchedSpeakerId: String?
@@ -193,14 +235,13 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
 
                 if let exactWord = segment.words.first(where: { $0.isActive(at: time) }) {
                     matchedWordId = exactWord.id
-                } else if let closestWord = segment.words.LastOrClosest(at: time) {
+                } else if let closestWord = segment.words.lastOrClosest(at: time) {
                     matchedWordId = closestWord.id
                 }
                 break
             }
         }
 
-        // 2. Encontrar evento acústico activo (`[😂 Risas]`, `[🎵 Música]`, etc.)
         let matchedEvent = recording.acousticEvents.first { event in
             time >= event.timestamp - 0.15 && time <= (event.timestamp + max(0.8, event.duration))
         }
@@ -232,7 +273,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
 }
 
 private extension Array where Element == WordTimestamp {
-    func LastOrClosest(at time: TimeInterval) -> WordTimestamp? {
+    func lastOrClosest(at time: TimeInterval) -> WordTimestamp? {
         guard !isEmpty else { return nil }
         var candidate: WordTimestamp?
         for word in self {

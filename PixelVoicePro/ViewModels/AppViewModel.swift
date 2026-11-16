@@ -62,6 +62,10 @@ final class AppViewModel: ObservableObject {
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         if let fetched = try? context.fetch(descriptor) {
+            for rec in fetched {
+                RecordingStorageService.ensurePlayableAudioFileExists(for: rec)
+            }
+            try? context.save()
             recordings = fetched.sorted { $0.createdAt > $1.createdAt }
         }
     }

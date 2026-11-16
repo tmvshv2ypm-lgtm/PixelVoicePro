@@ -40,13 +40,14 @@ enum AudioFormatOption: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    func audioSettings(sampleRate: Double, bitRate: Int = 192_000) -> [String: Any] {
+    func audioSettings(sampleRate: Double, channels: Int = 1, bitRate: Int = 192_000) -> [String: Any] {
+        let resolvedChannels = max(1, min(2, channels))
         switch self {
         case .m4a:
             return [
                 AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
                 AVSampleRateKey: sampleRate,
-                AVNumberOfChannelsKey: 1,
+                AVNumberOfChannelsKey: resolvedChannels,
                 AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue,
                 AVEncoderBitRateKey: bitRate
             ]
@@ -54,7 +55,7 @@ enum AudioFormatOption: String, Codable, CaseIterable, Identifiable {
             return [
                 AVFormatIDKey: Int(kAudioFormatLinearPCM),
                 AVSampleRateKey: sampleRate,
-                AVNumberOfChannelsKey: 1,
+                AVNumberOfChannelsKey: resolvedChannels,
                 AVLinearPCMBitDepthKey: 16,
                 AVLinearPCMIsBigEndianKey: false,
                 AVLinearPCMIsFloatKey: false,

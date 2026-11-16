@@ -44,7 +44,8 @@ final class AudioRecorderService: ObservableObject {
     @Published var selectedSampleRate: SampleRateOption = .hz48000
 
     private var audioEngine = AVAudioEngine()
-    private var outputAudioFile: AVAudioFile?
+    private nonisolated(unsafe) var outputAudioFile: AVAudioFile?
+    private let fileWriteLock = NSLock()
     private var currentFileURL: URL?
     private var currentFileName: String = ""
 
@@ -129,7 +130,6 @@ final class AudioRecorderService: ObservableObject {
         self.currentFileName = fileName
         self.currentFileURL = fileURL
 
-        // Configurar AVAudioEngine y el nodo de entrada del micrófono
         audioEngine.stop()
         audioEngine.reset()
 
@@ -142,22 +142,25 @@ final class AudioRecorderService: ObservableObject {
             recordingFormat = AVAudioFormat(standardFormatWithSampleRate: selectedSampleRate.rawValue, channels: 1)!
         }
 
-        // Crear el archivo de salida en disco (.m4a AAC o .wav PCM)
-        let settings = selectedFormat.audioSettings(sampleRate: recordingFormat.sampleRate)
+        // Crear el archivo de salida en disco (.m4a AAC o .wav PCM) alineado con el formato de entrada del hardware
+        let settings = selectedFormat.audioSettings(
+            sampleRate: recordingFormat.sampleRate,
+            channels: Int(recordingFormat.channelCount)
+        )
+        fileWriteLock.lock()
         self.outputAudioFile = try AVAudioFile(
             forWriting: fileURL,
             settings: settings,
-            commonFormat: .pcmFormatFloat32,
-            interleaved: false
+            commonFormat: recordingFormat.commonFormat,
+            interleaved: recordingFormat.isInterleaved
         )
+        fileWriteLock.unlock()
 
-        // Iniciar analizador de eventos acústicos (SoundAnalysis) y reconocimiento de voz en español
         acousticAnalyzer.startLiveStreamAnalysis(format: recordingFormat)
         if permissions.speech {
             transcriptionService.startLiveTranscription(diarizer: diarizationService)
         }
 
-        // Instalar tap en el nodo de entrada a ~60Hz (buffer de 1024 frames)
         inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
@@ -216,7 +219,7 @@ final class AudioRecorderService: ObservableObject {
         return bookmark
     }
 
-    /// Permite indicar manualmente un cambio o nuevo locutor en pleno directo o inyectar un evento acústico de prueba.
+    /// Permite indicar manualmente un cambio o nuevo locutor en pleno directo.
     func switchActiveSpeakerManually(toNumber number: Int) {
         let profile = diarizationService.selectOrCreateSpeaker(number: number, at: elapsedTime)
         liveSpeakers = diarizationService.detectedSpeakers
@@ -224,7 +227,7 @@ final class AudioRecorderService: ObservableObject {
         liveDetectorBanner = "🗣️ Hablando ahora: \(profile.displayName)"
     }
 
-    /// Permite registrar un evento acústico en vivo (útil también si el usuario toca un marcador rápido de evento en cabina).
+    /// Permite registrar un evento acústico en vivo.
     func triggerAcousticEventMarker(_ type: AcousticEventType) {
         let event = AcousticEvent(
             type: type,
@@ -235,7 +238,7 @@ final class AudioRecorderService: ObservableObject {
         acousticAnalyzer.recordDetectedEvent(event)
     }
 
-    /// Detiene la grabación, cierra el archivo de audio, ejecuta el post-procesamiento de transcripción/diarización
+    /// Detiene la grabación, cierra el archivo de audio, redirige `AVAudioSession` explícitamente hacia el altavoz principal
     /// y devuelve el modelo `VoiceRecording` completo con hora exacta hasta el segundo.
     func stopAndFinalizeRecording(customTitle: String? = nil, initialTags: [TagItem] = []) async -> VoiceRecording? {
         guard state == .recording || state == .paused else { return nil }
@@ -246,7 +249,13 @@ final class AudioRecorderService: ObservableObject {
 
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
-        outputAudioFile = nil // Fuerza el volcado y cierre limpio del contenedor .m4a / .wav
+
+        fileWriteLock.lock()
+        outputAudioFile = nil // Fuerza el volcado y cierre limpio del contenedor .m4a / .wav en disco
+        fileWriteLock.unlock()
+
+        // Configurar inmediatamente la sesión de audio hacia el altavoz principal tras finalizar la grabación
+        try? AudioSessionManager.shared.configureForPlayback()
 
         let finalDuration = max(0.5, elapsedTime)
         let exactEndDate = Date()
@@ -264,7 +273,6 @@ final class AudioRecorderService: ObservableObject {
         let capturedWords = transcriptionService.allCapturedWords
         let capturedEvents = acousticAnalyzer.detectedEvents
 
-        // Post-procesamiento de transcripción y separación de locutores
         let postProcessed = await transcriptionService.postProcessRecording(
             audioFileURL: fileURL,
             existingWords: capturedWords,
@@ -272,7 +280,6 @@ final class AudioRecorderService: ObservableObject {
             acousticEvents: capturedEvents
         )
 
-        // Calcular tamaño exacto en bytes y hash SHA-256 de integridad
         let fileSize = Self.queryFileSizeBytes(at: fileURL)
         let sha256 = Self.computeSHA256(at: fileURL)
 
@@ -315,20 +322,26 @@ final class AudioRecorderService: ObservableObject {
         return recording
     }
 
-    // MARK: - Procesamiento de Audio en Tiempo Real (Hilo de Audio -> UI 60 FPS)
+    // MARK: - Procesamiento de Audio en Tiempo Real (Hilo de Audio -> Disco Síncrono + UI 60 FPS)
 
     private nonisolated func processIncomingAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard let channelData = buffer.floatChannelData?[0] else { return }
         let frameLength = Int(buffer.frameLength)
         guard frameLength > 0 else { return }
 
-        // 1. Calcular RMS y decibelios con Accelerate (vDSP)
+        // 1. Escribir inmediatamente en el archivo de audio (.m4a o .wav) en el hilo del tap antes de que AVAudioEngine recicle el buffer
+        fileWriteLock.lock()
+        try? outputAudioFile?.write(from: buffer)
+        fileWriteLock.unlock()
+
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+
+        // 2. Calcular RMS y decibelios con Accelerate (vDSP)
         var rms: Float = 0.0
         vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
         let db = 20.0 * log10(max(rms, 1e-6))
         let normalized = max(0.03, min(1.0, (db + 55.0) / 55.0))
 
-        // 2. Calcular 28 bandas espectrales para el analizador de frecuencias en vivo
+        // 3. Calcular 28 bandas espectrales para el analizador de frecuencias en vivo
         var bands = [Float](repeating: 0.04, count: 28)
         let step = max(1, frameLength / 28)
         for b in 0..<28 {
@@ -344,9 +357,6 @@ final class AudioRecorderService: ObservableObject {
 
         Task { @MainActor [weak self] in
             guard let self = self, self.state == .recording else { return }
-
-            // Escribir en el archivo de salida (.m4a o .wav)
-            try? self.outputAudioFile?.write(from: buffer)
 
             // Alimentar reconocimiento de voz en vivo
             self.transcriptionService.appendAudioBuffer(buffer)
@@ -385,19 +395,16 @@ final class AudioRecorderService: ObservableObject {
                 let now = ProcessInfo.processInfo.systemUptime
                 self.elapsedTime = self.accumulatedTimeBeforePause + (now - self.lastResumeMachTime)
 
-                // Actualizar onda deslizante a 60 FPS
                 let sample = max(0.04, min(1.0, self.latestMeasuredRMS))
                 self.liveWaveformWindow.append(sample)
                 if self.liveWaveformWindow.count > 96 {
                     self.liveWaveformWindow.removeFirst(self.liveWaveformWindow.count - 96)
                 }
 
-                // Suavizado exponencial de las 28 barras de espectro
                 for i in 0..<min(self.liveSpectrumBands.count, self.latestSpectralBands.count) {
                     self.liveSpectrumBands[i] = (self.liveSpectrumBands[i] * 0.55) + (self.latestSpectralBands[i] * 0.45)
                 }
 
-                // Guardar muestra cada ~50ms (1 de cada 3 frames) para el resumen de onda persistente
                 if Int(self.elapsedTime * 60) % 3 == 0 {
                     self.fullRecordingWaveform.append(sample)
                 }

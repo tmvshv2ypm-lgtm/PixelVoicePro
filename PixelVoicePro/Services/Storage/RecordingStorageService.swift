@@ -24,55 +24,116 @@ enum RecordingStorageService {
         }
     }
 
-    /// Sintetiza un archivo de audio WAV real y reproducible en disco con modulación armónica vocal e intervalos de silencio reales,
-    /// garantizando que las notas de demostración iniciales se reproduzcan con sonido real, onda sincronizada y "Saltar Silencios".
-    static func generateSynthesizedDemoWAVFile(at destinationURL: URL, durationSeconds: TimeInterval) throws {
-        let sampleRate: Double = 22050.0
-        let totalFrames = Int(sampleRate * max(1.0, durationSeconds))
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: false
-        ),
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(totalFrames)),
-        let channel = buffer.floatChannelData?[0] else {
-            return
+    /// Verifica que el archivo de audio de una grabación exista en `FileManager` y sea reproducible.
+    /// Si una grabación de prueba precargada no tiene archivo en la ruta actual del contenedor o está vacío, lo regenera automáticamente.
+    @discardableResult
+    static func ensurePlayableAudioFileExists(for recording: VoiceRecording, expectedURL: URL? = nil) -> URL {
+        let targetURL = expectedURL ?? audioFileURL(for: recording.audioFileName)
+        let fm = FileManager.default
+
+        if fm.fileExists(atPath: targetURL.path),
+           let attrs = try? fm.attributesOfItem(atPath: targetURL.path),
+           let size = attrs[.size] as? NSNumber,
+           size.int64Value > 4096 {
+            // Si es una de las 3 notas de prueba precargadas (22050 Hz) de una versión previa, actualizarla al nuevo WAV de alta potencia 44.1kHz
+            if recording.sampleRate == 22050.0 {
+                try? generateSynthesizedDemoWAVFile(at: targetURL, durationSeconds: recording.duration)
+                recording.sampleRate = 44100.0
+                if let newSize = (try? fm.attributesOfItem(atPath: targetURL.path)[.size] as? NSNumber)?.int64Value {
+                    recording.fileSizeBytes = newSize
+                }
+            }
+            return targetURL
         }
 
-        buffer.frameLength = AVAudioFrameCount(totalFrames)
-        var phase: Double = 0.0
+        // Si el archivo no existe en la ruta actual (p. ej. tras actualizar el contenedor o en grabaciones de prueba), generarlo
+        try? generateSynthesizedDemoWAVFile(at: targetURL, durationSeconds: max(2.0, recording.duration))
+        if let newSize = (try? fm.attributesOfItem(atPath: targetURL.path)[.size] as? NSNumber)?.int64Value {
+            recording.fileSizeBytes = newSize
+        }
+        return targetURL
+    }
 
-        for frame in 0..<totalFrames {
-            let t = Double(frame) / sampleRate
-            // Crear un intervalo de silencio real entre el segundo 7.2 y 9.8 para probar "Saltar silencios" y [⏸️ Pausa larga]
-            let isSilenceWindow = (t >= 7.2 && t <= 9.8)
-            if isSilenceWindow {
-                channel[frame] = 0.0005 * Float.random(in: -1...1)
+    /// Genera un archivo RIFF/WAVE PCM de 16 bits a 44,100 Hz con cabecera estándar universal y volumen alto y claro,
+    /// garantizando reproducción 100% audible por el altavoz principal en `AVAudioPlayer`.
+    static func generateSynthesizedDemoWAVFile(at destinationURL: URL, durationSeconds: TimeInterval) throws {
+        let sampleRate: Int = 44100
+        let numChannels: Int = 1
+        let bitsPerSample: Int = 16
+        let clampedDuration = max(1.5, min(60.0, durationSeconds))
+        let totalSamples = Int(Double(sampleRate) * clampedDuration)
+        let bytesPerSample = bitsPerSample / 8
+        let dataChunkSize = totalSamples * numChannels * bytesPerSample
+        let totalFileSizeMinus8 = 36 + dataChunkSize
+
+        var wavData = Data(capacity: 44 + dataChunkSize)
+
+        func appendASCII(_ text: String) {
+            if let data = text.data(using: .ascii) {
+                wavData.append(data)
+            }
+        }
+        func appendUInt32LE(_ value: UInt32) {
+            var le = value.littleEndian
+            wavData.append(Data(bytes: &le, count: 4))
+        }
+        func appendUInt16LE(_ value: UInt16) {
+            var le = value.littleEndian
+            wavData.append(Data(bytes: &le, count: 2))
+        }
+
+        // Cabecera estándar RIFF/WAVE de 44 bytes
+        appendASCII("RIFF")
+        appendUInt32LE(UInt32(totalFileSizeMinus8))
+        appendASCII("WAVE")
+        appendASCII("fmt ")
+        appendUInt32LE(16) // Tamaño del bloque fmt PCM
+        appendUInt16LE(1)  // AudioFormat = 1 (Linear PCM)
+        appendUInt16LE(UInt16(numChannels))
+        appendUInt32LE(UInt32(sampleRate))
+        appendUInt32LE(UInt32(sampleRate * numChannels * bytesPerSample)) // ByteRate
+        appendUInt16LE(UInt16(numChannels * bytesPerSample)) // BlockAlign
+        appendUInt16LE(UInt16(bitsPerSample))
+        appendASCII("data")
+        appendUInt32LE(UInt32(dataChunkSize))
+
+        // Sintetizar muestras de audio claras (acordes armónicos cálidos con cadencia silábica y ventana de silencio entre 7.2s y 9.8s)
+        var phase1: Double = 0.0
+        var phase2: Double = 0.0
+        var phase3: Double = 0.0
+        var samplesBuffer = [Int16](repeating: 0, count: totalSamples)
+
+        for i in 0..<totalSamples {
+            let t = Double(i) / Double(sampleRate)
+
+            // Ventana de silencio real entre 7.2s y 9.8s para probar "Saltar silencios" y [⏸️ Pausa larga]
+            if t >= 7.2 && t <= 9.8 {
+                samplesBuffer[i] = 0
                 continue
             }
 
-            // Alternar timbre entre Locutor 1 (138 Hz) y Locutor 2 (205 Hz)
-            let baseFreq = (Int(t / 5.5) % 2 == 0) ? 138.0 : 205.0
-            let syllableEnvelope = 0.55 + 0.45 * sin(2.0 * .pi * 3.8 * t)
-            phase += 2.0 * .pi * baseFreq / sampleRate
-            let fundamental = sin(phase)
-            let harmonic2 = 0.35 * sin(phase * 2.0)
-            let harmonic3 = 0.15 * sin(phase * 3.0)
-            let sampleValue = 0.14 * syllableEnvelope * (fundamental + harmonic2 + harmonic3)
-            channel[frame] = Float(sampleValue)
+            // Alternar locutor 1 (timbre grave-medio cálido 220 Hz) y locutor 2 (timbre medio-agudo 330 Hz)
+            let isFirstSpeaker = (Int(t / 5.0) % 2 == 0)
+            let f1 = isFirstSpeaker ? 220.0 : 329.63
+            let f2 = isFirstSpeaker ? 277.18 : 440.0
+            let f3 = isFirstSpeaker ? 329.63 : 554.37
+
+            phase1 += 2.0 * .pi * f1 / Double(sampleRate)
+            phase2 += 2.0 * .pi * f2 / Double(sampleRate)
+            phase3 += 2.0 * .pi * f3 / Double(sampleRate)
+
+            // Modulación silábica suave para que suene rítmico y claramente audible en el altavoz del iPhone
+            let cadence = 0.45 + 0.55 * max(0.0, sin(2.0 * .pi * 3.2 * t))
+            let wave = 0.55 * sin(phase1) + 0.28 * sin(phase2) + 0.17 * sin(phase3)
+            let normalizedSample = max(-0.95, min(0.95, wave * cadence * 0.68))
+            samplesBuffer[i] = Int16(normalizedSample * 32767.0)
         }
 
-        if FileManager.default.fileExists(atPath: destinationURL.path) {
-            try FileManager.default.removeItem(at: destinationURL)
+        samplesBuffer.withUnsafeBufferPointer { ptr in
+            wavData.append( UnsafeBufferPointer(start: UnsafeRawPointer(ptr.baseAddress)?.assumingMemoryBound(to: UInt8.self), count: dataChunkSize) )
         }
-        let file = try AVAudioFile(
-            forWriting: destinationURL,
-            settings: AudioFormatOption.wav.audioSettings(sampleRate: sampleRate),
-            commonFormat: .pcmFormatFloat32,
-            interleaved: false
-        )
-        try file.write(from: buffer)
+
+        try wavData.write(to: destinationURL, options: .atomic)
     }
 
     // MARK: - Creación de Grabaciones Iniciales con Horas Exactas al Segundo (Mañana, Tarde y Noche del Mismo Día)
@@ -98,7 +159,6 @@ enum RecordingStorageService {
             return calendar.date(byAdding: .day, value: daysOffset, to: base) ?? base
         }
 
-        // 1. Grabación de la Noche (Hoy - 10:25:42 PM) - Entrevista / Clase de IA y Sistemas Embebidos
         let dateNight = makeDate(hour: 22, minute: 25, second: 42, daysOffset: 0)
         let rec1 = createRichRecording(
             title: "Clase Magistral: Redes Neuronales y Audio CoreML",
@@ -174,7 +234,6 @@ enum RecordingStorageService {
             ]
         )
 
-        // 2. Grabación de la Tarde (Mismo día - 04:12:09 PM) - Entrevista de Diseño de Producto
         let dateAfternoon = makeDate(hour: 16, minute: 12, second: 9, daysOffset: 0)
         let rec2 = createRichRecording(
             title: "Entrevista UX: Flujo de Búsqueda Instantánea",
@@ -237,7 +296,6 @@ enum RecordingStorageService {
             ]
         )
 
-        // 3. Grabación de la Mañana (Mismo día - 08:47:19 AM) - Nota rápida de Ideas
         let dateMorning = makeDate(hour: 8, minute: 47, second: 19, daysOffset: 0)
         let rec3 = createRichRecording(
             title: "Ideas de Arquitectura: Compresión AAC y Metadatos",
@@ -297,7 +355,7 @@ enum RecordingStorageService {
 
         try? generateSynthesizedDemoWAVFile(at: fileURL, durationSeconds: duration)
 
-        let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.int64Value ?? Int64(duration * 44100)
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.int64Value ?? Int64(duration * 88200)
         let sha256: String = {
             guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else { return "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }
             return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -334,7 +392,6 @@ enum RecordingStorageService {
             allEvents.append(contentsOf: turn.events)
         }
 
-        // Generar envolvente de onda realista (con caída en los intervalos de silencio)
         let sampleCount = 160
         var waveform: [Float] = []
         for i in 0..<sampleCount {
@@ -353,8 +410,8 @@ enum RecordingStorageService {
             endedAt: createdAt.addingTimeInterval(duration),
             audioFileName: fileName,
             format: .wav,
-            sampleRate: 22050.0,
-            bitRate: 352800,
+            sampleRate: 44100.0,
+            bitRate: 705600,
             channelCount: 1,
             duration: duration,
             fileSizeBytes: fileSize,

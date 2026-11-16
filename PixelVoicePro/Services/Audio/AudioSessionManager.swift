@@ -3,7 +3,7 @@ import AVFoundation
 import Speech
 import Combine
 
-/// Gestor central de `AVAudioSession` y permisos del sistema (Micrófono, Reconocimiento de Voz y Ejecución en Segundo Plano).
+/// Gestor central de `AVAudioSession` y permisos del sistema (Micrófono, Reconocimiento de Voz y Salida por Altavoz Principal).
 @MainActor
 final class AudioSessionManager: ObservableObject {
     static let shared = AudioSessionManager()
@@ -58,12 +58,12 @@ final class AudioSessionManager: ObservableObject {
         return (micGranted, speechGranted)
     }
 
-    /// Configura `AVAudioSession` para grabación continua en alta fidelidad incluso con pantalla bloqueada o en segundo plano.
+    /// Configura `AVAudioSession` para grabación continua en alta fidelidad manteniendo la salida en el altavoz principal.
     func configureForBackgroundRecording(preferredSampleRate: Double = 48000.0) throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(
             .playAndRecord,
-            mode: .measurement,
+            mode: .default,
             options: [
                 .defaultToSpeaker,
                 .allowBluetooth,
@@ -71,20 +71,22 @@ final class AudioSessionManager: ObservableObject {
                 .allowAirPlay
             ]
         )
+        try session.overrideOutputAudioPort(.speaker)
         try session.setPreferredSampleRate(preferredSampleRate)
-        try session.setPreferredIOBufferDuration(0.016) // ~60 FPS (16ms) para respuesta visual ultrarrápida
+        try session.setPreferredIOBufferDuration(0.016) // ~60 FPS (16ms)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
         updateCurrentRouteDescription()
     }
 
-    /// Configura `AVAudioSession` para reproducción interactiva con soporte de segundo plano.
+    /// Configura `AVAudioSession` explícitamente hacia el altavoz principal inferior del iPhone al terminar de grabar y al reproducir.
     func configureForPlayback() throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(
-            .playback,
-            mode: .spokenAudio,
-            options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay]
+            .playAndRecord,
+            mode: .default,
+            options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay]
         )
+        try session.overrideOutputAudioPort(.speaker)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
         updateCurrentRouteDescription()
     }
@@ -132,7 +134,7 @@ final class AudioSessionManager: ObservableObject {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                 shouldResume = options.contains(.shouldResume)
             }
-            try? AVAudioSession.sharedInstance().setActive(true)
+            try? configureForPlayback()
             onInterruptionEnded?(shouldResume)
         @unknown default:
             break

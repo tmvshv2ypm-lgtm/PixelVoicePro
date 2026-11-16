@@ -504,6 +504,7 @@ final class AudioRecorderService: ObservableObject {
             fileSizeBytes: fileSize,
             sha256Hash: "",
             isFavorite: false,
+            isProcessingBackground: true,
             transcriptionEngineUsed: "Procesando análisis e IA en segundo plano...",
             tags: initialTags,
             speakers: speakersSnapshot,
@@ -511,8 +512,7 @@ final class AudioRecorderService: ObservableObject {
             acousticEvents: eventsSnapshot,
             bookmarks: bookmarksSnapshot,
             waveformSamples: downsampledWaveform,
-            silenceIntervals: silenceSnapshot,
-            isProcessingBackground: true
+            silenceIntervals: silenceSnapshot
         )
         recording.recalculateSpeakerStatistics()
 
@@ -731,7 +731,7 @@ final class AudioRecorderService: ObservableObject {
         }
     }
 
-    static func queryFileSizeBytes(at url: URL) -> Int64 {
+    nonisolated static func queryFileSizeBytes(at url: URL) -> Int64 {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = attrs[.size] as? NSNumber else {
             return 0
@@ -740,7 +740,7 @@ final class AudioRecorderService: ObservableObject {
     }
 
     /// Calcula SHA-256 leyendo en bloques de 64 KB para evitar picos de RAM en grabaciones de varias horas.
-    static func computeSHA256Streaming(at url: URL) -> String {
+    nonisolated static func computeSHA256Streaming(at url: URL) -> String {
         guard let handle = try? FileHandle(forReadingFrom: url) else {
             return ""
         }

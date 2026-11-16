@@ -24,6 +24,7 @@
 		A10000152700000000000001 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000152700000000000001 /* AppViewModel.swift */; };
 		A10000162700000000000001 /* WaveformInteractiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000162700000000000001 /* WaveformInteractiveView.swift */; };
 		A10000172700000000000001 /* QuickRenameAndTagSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000172700000000000001 /* QuickRenameAndTagSheet.swift */; };
+		A10000282700000000000001 /* TagManagerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000282700000000000001 /* TagManagerSheet.swift */; };
 		A10000182700000000000001 /* SpeakerRenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000182700000000000001 /* SpeakerRenameSheet.swift */; };
 		A10000192700000000000001 /* ExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000192700000000000001 /* ExportOptionsSheet.swift */; };
 		A10000202700000000000001 /* RecordingSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000202700000000000001 /* RecordingSettingsSheet.swift */; };
@@ -53,6 +54,7 @@
 		A20000152700000000000001 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/ViewModels/AppViewModel.swift; sourceTree = "<group>"; };
 		A20000162700000000000001 /* WaveformInteractiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/WaveformInteractiveView.swift; sourceTree = "<group>"; };
 		A20000172700000000000001 /* QuickRenameAndTagSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/QuickRenameAndTagSheet.swift; sourceTree = "<group>"; };
+		A20000282700000000000001 /* TagManagerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/TagManagerSheet.swift; sourceTree = "<group>"; };
 		A20000182700000000000001 /* SpeakerRenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/SpeakerRenameSheet.swift; sourceTree = "<group>"; };
 		A20000192700000000000001 /* ExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/ExportOptionsSheet.swift; sourceTree = "<group>"; };
 		A20000202700000000000001 /* RecordingSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Settings/RecordingSettingsSheet.swift; sourceTree = "<group>"; };
@@ -87,6 +89,7 @@
 				A20000152700000000000001 /* AppViewModel.swift */,
 				A20000162700000000000001 /* WaveformInteractiveView.swift */,
 				A20000172700000000000001 /* QuickRenameAndTagSheet.swift */,
+				A20000282700000000000001 /* TagManagerSheet.swift */,
 				A20000182700000000000001 /* SpeakerRenameSheet.swift */,
 				A20000192700000000000001 /* ExportOptionsSheet.swift */,
 				A20000202700000000000001 /* RecordingSettingsSheet.swift */,
@@ -190,6 +193,7 @@
 				A10000152700000000000001 /* AppViewModel.swift in Sources */,
 				A10000162700000000000001 /* WaveformInteractiveView.swift in Sources */,
 				A10000172700000000000001 /* QuickRenameAndTagSheet.swift in Sources */,
+				A10000282700000000000001 /* TagManagerSheet.swift in Sources */,
 				A10000182700000000000001 /* SpeakerRenameSheet.swift in Sources */,
 				A10000192700000000000001 /* ExportOptionsSheet.swift in Sources */,
 				A10000202700000000000001 /* RecordingSettingsSheet.swift in Sources */,

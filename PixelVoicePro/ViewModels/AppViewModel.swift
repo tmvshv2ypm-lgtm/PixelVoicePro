@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import UIKit
 
 /// Grupo cronológico exacto por día (DD/MM/YYYY) ordenado de la grabación más reciente a la más antigua.
 struct ChronologicalDayGroup: Identifiable {
@@ -27,6 +28,7 @@ final class AppViewModel: ObservableObject {
     @Published var filterDayPeriod: DayPeriod?
 
     @Published var availableTags: [TagItem] = TagItem.predefinedTags
+    @Published var hiddenDefaultTagIDs: Set<String> = []
     @Published var isShowingRecordingBooth: Bool = false
     @Published var isShowingSettingsSheet: Bool = false
     @Published var activeNavigationTarget: RecordingNavigationTarget?
@@ -34,11 +36,24 @@ final class AppViewModel: ObservableObject {
     /// Modal de renombrado y etiquetado rápido (en listado o recién terminada una grabación)
     @Published var recordingPendingQuickEdit: VoiceRecording?
 
+    /// Estado del coordinador de post-procesamiento en segundo plano (sin bloquear la UI)
+    @Published var isBackgroundProcessingActive: Bool = false
+    @Published var backgroundProcessingTitle: String = ""
+    @Published var backgroundProcessingProgress: Double = 0.0
+    @Published var backgroundProcessingStatus: String = ""
+    @Published var activeBackgroundJobsCount: Int = 0
+
     private var modelContext: ModelContext?
     private let customTagsStorageKey = "com.pixelvoicepro.custom.tags"
+    private let hiddenDefaultTagsStorageKey = "com.pixelvoicepro.hidden.default.tags"
     private let didSeedSampleKey = "com.pixelvoicepro.didSeedInitialSamples.v2"
+    private let defaultTagIDs: Set<String> = Set(TagItem.predefinedTags.map { $0.id })
+
+    private var pendingBackgroundJobs: [(recording: VoiceRecording, payload: BackgroundPostProcessingPayload)] = []
+    private var backgroundQueueWorkerTask: Task<Void, Never>?
 
     init() {
+        loadHiddenDefaultTags()
         loadCustomTags()
     }
 
@@ -130,17 +145,181 @@ final class AppViewModel: ObservableObject {
 
     func createCustomTag(name: String, colorHex: String, iconName: String = "tag.fill") -> TagItem {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidateName = cleaned.isEmpty ? "Personalizada" : cleaned
+        if let existing = availableTags.first(where: { $0.name.lowercased() == candidateName.lowercased() }) {
+            if isDefaultTag(existing) && hiddenDefaultTagIDs.contains(existing.id) {
+                hiddenDefaultTagIDs.remove(existing.id)
+                saveHiddenDefaultTags()
+            }
+            return existing
+        }
         let newTag = TagItem(
             id: "tag_custom_\(UUID().uuidString.prefix(8))",
-            name: cleaned.isEmpty ? "Personalizada" : cleaned,
+            name: candidateName,
             colorHex: colorHex,
             iconName: iconName
         )
-        if !availableTags.contains(where: { $0.name.lowercased() == newTag.name.lowercased() }) {
-            availableTags.append(newTag)
-            saveCustomTags()
-        }
+        availableTags.append(newTag)
+        saveCustomTags()
         return newTag
+    }
+
+    func isDefaultTag(_ tag: TagItem) -> Bool {
+        defaultTagIDs.contains(tag.id)
+    }
+
+    func isTagHidden(_ tag: TagItem) -> Bool {
+        isDefaultTag(tag) && hiddenDefaultTagIDs.contains(tag.id)
+    }
+
+    var visibleAvailableTags: [TagItem] {
+        availableTags.filter { !hiddenDefaultTagIDs.contains($0.id) }
+    }
+
+    func toggleDefaultTagVisibility(_ tag: TagItem) {
+        guard isDefaultTag(tag) else { return }
+        if hiddenDefaultTagIDs.contains(tag.id) {
+            hiddenDefaultTagIDs.remove(tag.id)
+        } else {
+            hiddenDefaultTagIDs.insert(tag.id)
+            if selectedTagFilter?.id == tag.id {
+                selectedTagFilter = nil
+            }
+        }
+        saveHiddenDefaultTags()
+    }
+
+    func deleteCustomTag(_ tag: TagItem) {
+        guard !isDefaultTag(tag) else { return }
+        availableTags.removeAll { $0.id == tag.id }
+        saveCustomTags()
+        if selectedTagFilter?.id == tag.id {
+            selectedTagFilter = nil
+        }
+        var didModifyAnyRecording = false
+        for rec in recordings where rec.tags.contains(where: { $0.id == tag.id }) {
+            rec.tags = rec.tags.filter { $0.id != tag.id }
+            didModifyAnyRecording = true
+        }
+        if didModifyAnyRecording {
+            saveChanges()
+        }
+    }
+
+    // MARK: - Post-Procesamiento en Segundo Plano (No Bloqueante)
+
+    func enqueueBackgroundPostProcessing(for recording: VoiceRecording, payload: BackgroundPostProcessingPayload) {
+        pendingBackgroundJobs.append((recording, payload))
+        activeBackgroundJobsCount = pendingBackgroundJobs.count + (isBackgroundProcessingActive ? 1 : 0)
+
+        guard backgroundQueueWorkerTask == nil else { return }
+
+        backgroundQueueWorkerTask = Task { [weak self] in
+            guard let self = self else { return }
+            while !self.pendingBackgroundJobs.isEmpty {
+                let job = self.pendingBackgroundJobs.removeFirst()
+                self.isBackgroundProcessingActive = true
+                self.backgroundProcessingTitle = job.recording.title
+                self.backgroundProcessingProgress = 0.08
+                self.backgroundProcessingStatus = "Preparando análisis en 2º plano..."
+                self.activeBackgroundJobsCount = self.pendingBackgroundJobs.count + 1
+
+                await self.executeBackgroundJob(recording: job.recording, payload: job.payload)
+            }
+            self.isBackgroundProcessingActive = false
+            self.backgroundProcessingProgress = 1.0
+            self.backgroundProcessingStatus = ""
+            self.activeBackgroundJobsCount = 0
+            self.backgroundQueueWorkerTask = nil
+        }
+    }
+
+    private func executeBackgroundJob(recording: VoiceRecording, payload: BackgroundPostProcessingPayload) async {
+        let bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "PixelVoiceProPostProcess_\(recording.id.uuidString.prefix(6))")
+        defer {
+            if bgTaskID != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskID)
+            }
+        }
+
+        let diarizer = payload.diarizationService
+        let analyzer = payload.acousticAnalyzer
+        let transcriber = payload.transcriptionService
+        let fileURL = payload.audioFileURL
+        let duration = payload.totalDuration
+        let existingWords = payload.capturedWords
+        let skipOfflineSoundAnalysis = payload.hadLiveTranscriptionEntireSession
+
+        let result: (
+            segments: [TranscriptSegment],
+            engine: String,
+            speakers: [SpeakerProfile],
+            events: [AcousticEvent],
+            silences: [SilenceInterval],
+            sha256: String,
+            fileSize: Int64
+        ) = await Task.detached(priority: .utility) {
+            await MainActor.run { [weak self] in
+                self?.backgroundProcessingProgress = 0.12
+                self?.backgroundProcessingStatus = "Analizando locutores (L1, L2, L3...)"
+            }
+            diarizer.analyzeAudioFileOfflineIfNeeded(url: fileURL)
+
+            await MainActor.run { [weak self] in
+                self?.backgroundProcessingProgress = 0.18
+                self?.backgroundProcessingStatus = "Detectando eventos acústicos y pausas..."
+            }
+            if !skipOfflineSoundAnalysis {
+                await analyzer.analyzeCompleteAudioFileIfNeeded(at: fileURL)
+            }
+
+            let events = analyzer.detectedEvents
+            let silences = analyzer.silenceIntervals
+            let speakers = diarizer.detectedSpeakers
+
+            let processed = await transcriber.postProcessRecording(
+                audioFileURL: fileURL,
+                totalDuration: duration,
+                existingWords: existingWords,
+                diarizer: diarizer,
+                acousticEvents: events,
+                onProgress: { [weak self] progress, status in
+                    self?.backgroundProcessingProgress = max(0.20, min(0.94, progress))
+                    self?.backgroundProcessingStatus = status
+                }
+            )
+
+            await MainActor.run { [weak self] in
+                self?.backgroundProcessingProgress = 0.96
+                self?.backgroundProcessingStatus = "Verificando integridad SHA-256..."
+            }
+            let fileSize = AudioRecorderService.queryFileSizeBytes(at: fileURL)
+            let sha256 = AudioRecorderService.computeSHA256Streaming(at: fileURL)
+
+            return (
+                processed.segments,
+                processed.engineDescription,
+                speakers,
+                events,
+                silences,
+                sha256,
+                fileSize
+            )
+        }.value
+
+        // Verificar que la grabación no fue eliminada mientras se procesaba en segundo plano
+        if recordings.contains(where: { $0.id == recording.id }) {
+            recording.speakers = result.speakers
+            recording.segments = result.segments
+            recording.acousticEvents = result.events
+            recording.silenceIntervals = result.silences
+            recording.sha256Hash = result.sha256
+            recording.fileSizeBytes = result.fileSize
+            recording.transcriptionEngineUsed = result.engine
+            recording.isProcessingBackground = false
+            recording.recalculateSpeakerStatistics()
+            saveChanges()
+        }
     }
 
     // MARK: - Filtrado y Agrupación Cronológica Precisa al Segundo
@@ -253,6 +432,15 @@ final class AppViewModel: ObservableObject {
             merged.append(item)
         }
         availableTags = merged
+    }
+
+    private func loadHiddenDefaultTags() {
+        let stored = UserDefaults.standard.stringArray(forKey: hiddenDefaultTagsStorageKey) ?? []
+        hiddenDefaultTagIDs = Set(stored.filter { defaultTagIDs.contains($0) })
+    }
+
+    private func saveHiddenDefaultTags() {
+        UserDefaults.standard.set(Array(hiddenDefaultTagIDs), forKey: hiddenDefaultTagsStorageKey)
     }
 
     private func saveCustomTags() {

@@ -30,6 +30,7 @@ final class VoiceRecording {
     var fileSizeBytes: Int64
     var sha256Hash: String
     var isFavorite: Bool
+    var isProcessingBackground: Bool = false
     var transcriptionEngineUsed: String
 
     /// Texto completo plano indexable para búsquedas globales ultrarrápidas
@@ -43,6 +44,22 @@ final class VoiceRecording {
     var bookmarksData: Data
     var waveformSamplesData: Data
     var silenceIntervalsData: Data
+
+    /// Cachés en memoria (@Transient) para evitar decodificar JSON a 60 Hz durante reproducción o scroll en clases de varias horas
+    @Transient private var cachedTags: [TagItem]?
+    @Transient private var cachedTagsByteCount: Int = -1
+    @Transient private var cachedSpeakers: [SpeakerProfile]?
+    @Transient private var cachedSpeakersByteCount: Int = -1
+    @Transient private var cachedSegments: [TranscriptSegment]?
+    @Transient private var cachedSegmentsByteCount: Int = -1
+    @Transient private var cachedEvents: [AcousticEvent]?
+    @Transient private var cachedEventsByteCount: Int = -1
+    @Transient private var cachedBookmarks: [RecordingBookmark]?
+    @Transient private var cachedBookmarksByteCount: Int = -1
+    @Transient private var cachedWaveform: [Float]?
+    @Transient private var cachedWaveformByteCount: Int = -1
+    @Transient private var cachedSilences: [SilenceInterval]?
+    @Transient private var cachedSilencesByteCount: Int = -1
 
     init(
         id: UUID = UUID(),
@@ -58,6 +75,7 @@ final class VoiceRecording {
         fileSizeBytes: Int64,
         sha256Hash: String = "",
         isFavorite: Bool = false,
+        isProcessingBackground: Bool = false,
         transcriptionEngineUsed: String = "Apple Speech On-Device + PixelVoice DSP Diarizer",
         tags: [TagItem] = [],
         speakers: [SpeakerProfile] = [],
@@ -84,6 +102,7 @@ final class VoiceRecording {
         self.fileSizeBytes = fileSizeBytes
         self.sha256Hash = sha256Hash
         self.isFavorite = isFavorite
+        self.isProcessingBackground = isProcessingBackground
         self.transcriptionEngineUsed = transcriptionEngineUsed
 
         let encoder = JSONEncoder()
@@ -136,41 +155,124 @@ final class VoiceRecording {
     }
 
     var tags: [TagItem] {
-        get { (try? JSONDecoder().decode([TagItem].self, from: tagsData)) ?? [] }
-        set { tagsData = (try? JSONEncoder().encode(newValue)) ?? Data() }
+        get {
+            if let cached = cachedTags, cachedTagsByteCount == tagsData.count {
+                return cached
+            }
+            let decoded = (try? JSONDecoder().decode([TagItem].self, from: tagsData)) ?? []
+            cachedTags = decoded
+            cachedTagsByteCount = tagsData.count
+            return decoded
+        }
+        set {
+            tagsData = (try? JSONEncoder().encode(newValue)) ?? Data()
+            cachedTags = newValue
+            cachedTagsByteCount = tagsData.count
+        }
     }
 
     var speakers: [SpeakerProfile] {
-        get { (try? JSONDecoder().decode([SpeakerProfile].self, from: speakersData)) ?? [] }
-        set { speakersData = (try? JSONEncoder().encode(newValue)) ?? Data() }
+        get {
+            if let cached = cachedSpeakers, cachedSpeakersByteCount == speakersData.count {
+                return cached
+            }
+            let decoded = (try? JSONDecoder().decode([SpeakerProfile].self, from: speakersData)) ?? []
+            cachedSpeakers = decoded
+            cachedSpeakersByteCount = speakersData.count
+            return decoded
+        }
+        set {
+            speakersData = (try? JSONEncoder().encode(newValue)) ?? Data()
+            cachedSpeakers = newValue
+            cachedSpeakersByteCount = speakersData.count
+        }
     }
 
     var segments: [TranscriptSegment] {
-        get { (try? JSONDecoder().decode([TranscriptSegment].self, from: segmentsData)) ?? [] }
+        get {
+            if let cached = cachedSegments, cachedSegmentsByteCount == segmentsData.count {
+                return cached
+            }
+            let decoded = (try? JSONDecoder().decode([TranscriptSegment].self, from: segmentsData)) ?? []
+            cachedSegments = decoded
+            cachedSegmentsByteCount = segmentsData.count
+            return decoded
+        }
         set {
             segmentsData = (try? JSONEncoder().encode(newValue)) ?? Data()
+            cachedSegments = newValue
+            cachedSegmentsByteCount = segmentsData.count
             fullTranscriptText = newValue.map(\.text).joined(separator: " ")
         }
     }
 
     var acousticEvents: [AcousticEvent] {
-        get { (try? JSONDecoder().decode([AcousticEvent].self, from: acousticEventsData)) ?? [] }
-        set { acousticEventsData = (try? JSONEncoder().encode(newValue)) ?? Data() }
+        get {
+            if let cached = cachedEvents, cachedEventsByteCount == acousticEventsData.count {
+                return cached
+            }
+            let decoded = (try? JSONDecoder().decode([AcousticEvent].self, from: acousticEventsData)) ?? []
+            cachedEvents = decoded
+            cachedEventsByteCount = acousticEventsData.count
+            return decoded
+        }
+        set {
+            acousticEventsData = (try? JSONEncoder().encode(newValue)) ?? Data()
+            cachedEvents = newValue
+            cachedEventsByteCount = acousticEventsData.count
+        }
     }
 
     var bookmarks: [RecordingBookmark] {
-        get { (try? JSONDecoder().decode([RecordingBookmark].self, from: bookmarksData)) ?? [] }
-        set { bookmarksData = (try? JSONEncoder().encode(newValue.sorted { $0.timestamp < $1.timestamp })) ?? Data() }
+        get {
+            if let cached = cachedBookmarks, cachedBookmarksByteCount == bookmarksData.count {
+                return cached
+            }
+            let decoded = (try? JSONDecoder().decode([RecordingBookmark].self, from: bookmarksData)) ?? []
+            cachedBookmarks = decoded
+            cachedBookmarksByteCount = bookmarksData.count
+            return decoded
+        }
+        set {
+            let sorted = newValue.sorted { $0.timestamp < $1.timestamp }
+            bookmarksData = (try? JSONEncoder().encode(sorted)) ?? Data()
+            cachedBookmarks = sorted
+            cachedBookmarksByteCount = bookmarksData.count
+        }
     }
 
     var waveformSamples: [Float] {
-        get { (try? JSONDecoder().decode([Float].self, from: waveformSamplesData)) ?? [] }
-        set { waveformSamplesData = (try? JSONEncoder().encode(newValue)) ?? Data() }
+        get {
+            if let cached = cachedWaveform, cachedWaveformByteCount == waveformSamplesData.count {
+                return cached
+            }
+            let decoded = (try? JSONDecoder().decode([Float].self, from: waveformSamplesData)) ?? []
+            cachedWaveform = decoded
+            cachedWaveformByteCount = waveformSamplesData.count
+            return decoded
+        }
+        set {
+            waveformSamplesData = (try? JSONEncoder().encode(newValue)) ?? Data()
+            cachedWaveform = newValue
+            cachedWaveformByteCount = waveformSamplesData.count
+        }
     }
 
     var silenceIntervals: [SilenceInterval] {
-        get { (try? JSONDecoder().decode([SilenceInterval].self, from: silenceIntervalsData)) ?? [] }
-        set { silenceIntervalsData = (try? JSONEncoder().encode(newValue)) ?? Data() }
+        get {
+            if let cached = cachedSilences, cachedSilencesByteCount == silenceIntervalsData.count {
+                return cached
+            }
+            let decoded = (try? JSONDecoder().decode([SilenceInterval].self, from: silenceIntervalsData)) ?? []
+            cachedSilences = decoded
+            cachedSilencesByteCount = silenceIntervalsData.count
+            return decoded
+        }
+        set {
+            silenceIntervalsData = (try? JSONEncoder().encode(newValue)) ?? Data()
+            cachedSilences = newValue
+            cachedSilencesByteCount = silenceIntervalsData.count
+        }
     }
 
     // MARK: - Gestión de Locutores y Renombrado Global en la Nota

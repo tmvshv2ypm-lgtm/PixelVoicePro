@@ -5,9 +5,10 @@ import SwiftUI
 /// sincronización Karaoke palabra por palabra, buscador local con pines en la onda, renombrado de locutores y reproductor Pro abajo.
 struct RecordingDetailView: View {
     enum DetailTab: String, CaseIterable, Identifiable {
+        case player = "Audio"
         case transcript = "Transcripción"
-        case summaryAndBookmarks = "Resumen / Marcadores"
-        case fileDetails = "Detalles del Archivo"
+        case summaryAndBookmarks = "Resumen"
+        case fileDetails = "Detalles"
 
         var id: String { rawValue }
     }
@@ -20,7 +21,7 @@ struct RecordingDetailView: View {
     @StateObject private var playerService = AudioPlayerService()
 
     @FocusState private var isLocalSearchFocused: Bool
-    @State private var selectedTab: DetailTab = .transcript
+    @State private var selectedTab: DetailTab = .player
     @State private var localSearchQuery: String = ""
     @State private var currentSearchHitIndex: Int = 0
     @State private var selectedSpeakerIdForRename: String?
@@ -34,40 +35,68 @@ struct RecordingDetailView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // 1. Cabecera Fija con Título Editable y Fecha/Hora Exacta Obligatoria debajo
-            detailTopHeader
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                // 1. Cabecera compacta con Título Editable y Fecha/Hora Exacta
+                detailTopHeader
 
-            // 2. Barra de Búsqueda Local dentro de la Grabación (resalta en texto y en la línea de tiempo del audio)
-            localSearchBar
-
-            // 3. Selector de Pestañas Superior
-            Picker("Vista de Detalle", selection: $selectedTab) {
-                ForEach(DetailTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+                // 2. Barra discreta si esta nota aún está terminando su análisis en 2º plano
+                if recording.isProcessingBackground && viewModel.isBackgroundProcessingActive {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.75)
+                            .tint(PixelTheme.accentBlue)
+                        Text(viewModel.backgroundProcessingStatus.isEmpty ? "Procesando en 2º plano..." : viewModel.backgroundProcessingStatus)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("\(Int(viewModel.backgroundProcessingProgress * 100))%")
+                            .font(.system(.caption2, design: .monospaced).weight(.bold))
+                            .foregroundStyle(PixelTheme.accentBlue)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(PixelTheme.accentBlue.opacity(0.08))
                 }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
 
-            // 4. Contenido del Panel Superior según la Pestaña Activa
-            Group {
-                switch selectedTab {
-                case .transcript:
-                    karaokeTranscriptTabView
-                case .summaryAndBookmarks:
-                    summaryAndBookmarksTabView
-                case .fileDetails:
-                    technicalFileDetailsTabView
+                // 3. Pestañas limpias sin truncar: Audio, Transcripción, Resumen, Detalles
+                detailTopTabBar
+
+                // 4. Buscador local únicamente en la vista de Transcripción
+                if selectedTab == .transcript {
+                    localSearchBar
+                        .transition(.opacity)
                 }
+
+                // 5. Vista activa a pantalla completa con transición suave
+                Group {
+                    switch selectedTab {
+                    case .player:
+                        fullScreenAudioPlayerView
+                            .transition(.opacity.combined(with: .scale(scale: 0.99)))
+                    case .transcript:
+                        karaokeTranscriptTabView
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    case .summaryAndBookmarks:
+                        summaryAndBookmarksTabView
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    case .fileDetails:
+                        technicalFileDetailsTabView
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeInOut(duration: 0.22), value: selectedTab)
 
-            Divider()
-
-            // 5. Reproductor Pro Inferior con Onda Interactiva, Velocidad y "Saltar Silencios"
-            interactiveBottomPlayerDock
+            // Mini reproductor flotante Liquid Glass cuando se visualiza Transcripción, Resumen o Detalles
+            if selectedTab != .player {
+                floatingLiquidGlassMiniPlayer
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -107,6 +136,7 @@ struct RecordingDetailView: View {
 
             if let keyword = initialSearchKeyword, !keyword.isEmpty {
                 localSearchQuery = keyword
+                selectedTab = .transcript
             }
             if let jumpTime = initialSeekTimestamp, jumpTime > 0 {
                 playerService.seek(to: jumpTime, autoPlay: true)
@@ -115,6 +145,89 @@ struct RecordingDetailView: View {
         .onDisappear {
             playerService.stop()
         }
+    }
+
+    private var detailTopTabBar: some View {
+        HStack(spacing: 6) {
+            ForEach(DetailTab.allCases) { tab in
+                let isSelected = selectedTab == tab
+                Button {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                        selectedTab = tab
+                        if tab != .transcript {
+                            isLocalSearchFocused = false
+                        }
+                    }
+                } label: {
+                    Text(tab.rawValue)
+                        .font(.caption.weight(isSelected ? .bold : .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule()
+                                .fill(isSelected ? PixelTheme.accentBlue : Color.clear)
+                        )
+                        .foregroundStyle(isSelected ? .white : .primary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private var floatingLiquidGlassMiniPlayer: some View {
+        HStack(spacing: 12) {
+            Button {
+                playerService.togglePlayPause()
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(PixelTheme.accentBlue)
+                        .frame(width: 40, height: 40)
+                        .liquidGlassCircle(tint: PixelTheme.accentBlue)
+                    Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                        .offset(x: playerService.isPlaying ? 0 : 1)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                    selectedTab = .player
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(recording.title)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text("\(ExactDateFormatter.preciseChronometer(playerService.currentTime, alwaysShowHours: false)) / \(ExactDateFormatter.preciseChronometer(playerService.duration, alwaysShowHours: false))")
+                            .font(.system(.caption2, design: .monospaced).weight(.semibold))
+                            .foregroundStyle(PixelTheme.accentBlue)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "waveform")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(PixelTheme.accentBlue)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .liquidGlassCapsule()
+        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
     }
 
     // MARK: - 1. Cabecera con Fecha y Hora Exacta Siempre Visible
@@ -267,7 +380,7 @@ struct RecordingDetailView: View {
                                         Circle()
                                             .fill(speaker.color)
                                             .frame(width: 8, height: 8)
-                                        Text(speaker.displayName)
+                                        Text(speaker.compactLabel)
                                             .font(.caption2.weight(.bold))
                                         Image(systemName: "pencil")
                                             .font(.system(size: 9))
@@ -284,43 +397,50 @@ struct RecordingDetailView: View {
 
                     if recording.segments.isEmpty {
                         VStack(spacing: 10) {
-                            Image(systemName: "waveform.and.magnifyingglass")
+                            Image(systemName: recording.isProcessingBackground ? "sparkles" : "waveform.and.magnifyingglass")
                                 .font(.largeTitle)
-                                .foregroundStyle(.secondary)
-                            Text("Esta grabación no contiene palabras transcritas.")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(recording.isProcessingBackground ? PixelTheme.accentBlue : .secondary)
+                            Text(
+                                recording.isProcessingBackground
+                                    ? "Transcribiendo audio en segundo plano..."
+                                    : "Esta grabación no contiene palabras transcritas."
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 36)
                     } else {
-                        ForEach(recording.segments) { segment in
-                            KaraokeSegmentCardView(
-                                segment: segment,
-                                speaker: recording.speakerProfile(for: segment.speakerId),
-                                isSegmentActive: playerService.activeSegmentId == segment.id,
-                                activeWordId: playerService.activeWordId,
-                                activeAcousticEventId: playerService.activeAcousticEventId,
-                                localSearchQuery: localSearchQuery,
-                                onTapWord: { wordTimestamp in
-                                    playerService.seek(to: wordTimestamp.startTime, autoPlay: true)
-                                },
-                                onTapSegmentHeader: {
-                                    playerService.seek(to: segment.startTime, autoPlay: true)
-                                },
-                                onTapRenameSpeaker: {
-                                    selectedSpeakerIdForRename = segment.speakerId
-                                    isShowingSpeakerRenameSheet = true
-                                },
-                                onTapAcousticEvent: { event in
-                                    playerService.seek(to: event.timestamp, autoPlay: true)
-                                }
-                            )
-                            .id(segment.id)
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(recording.segments) { segment in
+                                KaraokeSegmentCardView(
+                                    segment: segment,
+                                    speaker: recording.speakerProfile(for: segment.speakerId),
+                                    isSegmentActive: playerService.activeSegmentId == segment.id,
+                                    activeWordId: playerService.activeWordId,
+                                    activeAcousticEventId: playerService.activeAcousticEventId,
+                                    localSearchQuery: localSearchQuery,
+                                    onTapWord: { wordTimestamp in
+                                        playerService.seek(to: wordTimestamp.startTime, autoPlay: true)
+                                    },
+                                    onTapSegmentHeader: {
+                                        playerService.seek(to: segment.startTime, autoPlay: true)
+                                    },
+                                    onTapRenameSpeaker: {
+                                        selectedSpeakerIdForRename = segment.speakerId
+                                        isShowingSpeakerRenameSheet = true
+                                    },
+                                    onTapAcousticEvent: { event in
+                                        playerService.seek(to: event.timestamp, autoPlay: true)
+                                    }
+                                )
+                                .id(segment.id)
+                            }
                         }
                     }
                 }
                 .padding(16)
+                .padding(.bottom, 84)
             }
             .scrollDismissesKeyboard(.immediately)
             .onTapGesture {
@@ -344,7 +464,7 @@ struct RecordingDetailView: View {
                 // 1. Añadir nuevo marcador en el segundo actual de reproducción
                 VStack(alignment: .leading, spacing: 8) {
                     Label(
-                        "Marcadores de Tiempo (Bookmarks · \(recording.bookmarks.count))",
+                        "Marcadores",
                         systemImage: "bookmark.fill"
                     )
                     .font(.subheadline.weight(.bold))
@@ -428,7 +548,7 @@ struct RecordingDetailView: View {
                 // 2. Eventos Acústicos Detectados (SoundAnalysis: Risas, Música, Aplausos, Pausas)
                 VStack(alignment: .leading, spacing: 8) {
                     Label(
-                        "Eventos Acústicos No Verbales (SoundAnalysis · \(recording.acousticEvents.count))",
+                        "Eventos Acústicos",
                         systemImage: "waveform.badge.magnifyingglass"
                     )
                     .font(.subheadline.weight(.bold))
@@ -496,10 +616,10 @@ struct RecordingDetailView: View {
                                 Circle()
                                     .fill(spk.color)
                                     .frame(width: 10, height: 10)
-                                Text(spk.displayName)
+                                Text(spk.compactLabel)
                                     .font(.caption.weight(.bold))
                                 if spk.customName != nil {
-                                    Text("(\(spk.defaultLabel))")
+                                    Text("(\(spk.shortBadgeCode))")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -522,14 +642,15 @@ struct RecordingDetailView: View {
                 }
             }
             .padding(16)
+            .padding(.bottom, 84)
         }
     }
 
-    // MARK: - Pestaña 3: Detalles Técnicos Exhaustivos del Archivo y Exportación
+    // MARK: - Pestaña 3: Detalles Técnicos del Archivo y Exportación
 
     private var technicalFileDetailsTabView: some View {
         List {
-            Section("Cronología Exacta (Sin Ambigüedades)") {
+            Section("Cronología") {
                 MetadataRow(title: "Creación Exacta", value: recording.formattedExactCreationDate, monospaced: true)
                 MetadataRow(title: "Finalización Exacta", value: recording.formattedExactEndDate, monospaced: true)
                 MetadataRow(title: "Fecha de Agrupación", value: recording.dayGroupKey, monospaced: true)
@@ -537,40 +658,43 @@ struct RecordingDetailView: View {
                 MetadataRow(title: "Duración con Centésimas", value: recording.formattedPreciseDuration, monospaced: true)
             }
 
-            Section("Archivo de Audio y Almacenamiento") {
+            Section("Almacenamiento") {
                 MetadataRow(title: "Nombre de Archivo", value: recording.audioFileName, monospaced: true)
                 MetadataRow(title: "Formato y Códec", value: recording.audioFormat.displayName, monospaced: false)
                 MetadataRow(title: "Peso Exacto", value: recording.formattedDetailedFileSize, monospaced: true)
                 MetadataRow(title: "Frecuencia de Muestreo", value: "\(Int(recording.sampleRate)) Hz", monospaced: true)
                 MetadataRow(title: "Bitrate", value: "\(recording.bitRate / 1000) kbps", monospaced: true)
                 MetadataRow(title: "Canales", value: "\(recording.channelCount) (Mono Vocal)", monospaced: false)
-                MetadataRow(title: "SHA-256 Integridad", value: String(recording.sha256Hash.prefix(24)) + "...", monospaced: true)
+                MetadataRow(title: "SHA-256 Integridad", value: recording.sha256Hash.isEmpty ? "Calculando..." : String(recording.sha256Hash.prefix(24)) + "...", monospaced: true)
             }
 
-            Section("Motor de IA y Análisis Acústico") {
+            Section("Análisis e IA") {
                 MetadataRow(title: "Motor Utilizado", value: recording.transcriptionEngineUsed, monospaced: false)
                 MetadataRow(title: "Locutores Detectados", value: "\(recording.speakers.count)", monospaced: true)
                 MetadataRow(title: "Eventos Acústicos", value: "\(recording.acousticEvents.count)", monospaced: true)
                 MetadataRow(title: "Intervalos de Silencio", value: "\(recording.silenceIntervals.count)", monospaced: true)
             }
 
-            Section("Acciones de Exportación Limpia") {
+            Section("Exportación") {
                 Button {
                     isShowingExportSheet = true
                 } label: {
-                    Label("Abrir Menú de Exportación (Audio, PDF, Markdown, TXT o Paquete)", systemImage: "square.and.arrow.up.fill")
+                    Label("Exportar Audio / Documento", systemImage: "square.and.arrow.up.fill")
                         .fontWeight(.bold)
                 }
             }
         }
         .listStyle(.insetGrouped)
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 76)
+        }
     }
 
-    // MARK: - 5. Reproductor Pro Inferior con Onda Interactiva, Velocidad y "Saltar Silencios"
+    // MARK: - 5. Reproductor a Pantalla Completa (Apple Music / Voice Memos)
 
-    private var interactiveBottomPlayerDock: some View {
-        VStack(spacing: 10) {
-            // Onda interactiva con pines de eventos acústicos, marcadores y búsqueda local
+    private var fullScreenAudioPlayerView: some View {
+        VStack(spacing: 18) {
+            // Onda interactiva de ancho completo sin caja gris
             InteractiveTimelineWaveformView(
                 recording: recording,
                 currentTime: playerService.currentTime,
@@ -578,14 +702,16 @@ struct RecordingDetailView: View {
                 searchHits: localSearchHits,
                 onSeek: { second in
                     playerService.seek(to: second, autoPlay: true)
-                }
+                },
+                isFullScreenExpanded: true
             )
-            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.top, 6)
 
             // Indicadores de tiempo exacto + estado de "Saltar silencios"
             HStack {
                 Text(ExactDateFormatter.preciseChronometer(playerService.currentTime, alwaysShowHours: false))
-                    .font(.system(.caption, design: .monospaced).weight(.bold))
+                    .font(.system(.subheadline, design: .monospaced).weight(.bold))
                     .foregroundStyle(PixelTheme.accentBlue)
 
                 Spacer()
@@ -597,100 +723,97 @@ struct RecordingDetailView: View {
                         Text(
                             playerService.isCurrentlySkippingSilence
                                 ? "¡Saltando silencio!"
-                                : "Silencios ahorrados: \(String(format: "%.1fs", playerService.totalSilenceSavedSeconds))"
+                                : "Ahorrado: \(String(format: "%.1fs", playerService.totalSilenceSavedSeconds))"
                         )
                         .font(.caption2.weight(.bold))
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(PixelTheme.successEmerald.opacity(0.16), in: Capsule())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .liquidGlassCapsule(tint: PixelTheme.successEmerald.opacity(0.25), interactive: false)
                     .foregroundStyle(PixelTheme.successEmerald)
                 }
 
                 Spacer()
 
                 Text(ExactDateFormatter.preciseChronometer(playerService.duration, alwaysShowHours: false))
-                    .font(.system(.caption, design: .monospaced).weight(.semibold))
+                    .font(.system(.subheadline, design: .monospaced).weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 22)
 
-            // Controles de transporte Pro: -10s, -5s, Play/Pause, +5s, +10s
-            HStack(spacing: 18) {
+            // Controles de transporte limpios: solo íconos circulares (sin textos -10s/-5s/+5s/+10s) y Play azul Liquid Glass
+            HStack(spacing: 22) {
                 Button {
                     playerService.skip(by: -10.0)
                 } label: {
-                    VStack(spacing: 1) {
-                        Image(systemName: "gobackward.10")
-                            .font(.title3.weight(.semibold))
-                        Text("-10s")
-                            .font(.system(size: 9, weight: .bold))
-                    }
+                    Image(systemName: "gobackward.10")
+                        .font(.title2.weight(.semibold))
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
 
                 Button {
                     playerService.skip(by: -5.0)
                 } label: {
-                    VStack(spacing: 1) {
-                        Image(systemName: "gobackward.5")
-                            .font(.title3.weight(.semibold))
-                        Text("-5s")
-                            .font(.system(size: 9, weight: .bold))
-                    }
+                    Image(systemName: "gobackward.5")
+                        .font(.title2.weight(.semibold))
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
 
                 Button {
                     playerService.togglePlayPause()
                 } label: {
-                    Image(systemName: playerService.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 52))
-                        .foregroundStyle(PixelTheme.accentBlue)
-                        .shadow(color: PixelTheme.accentBlue.opacity(0.3), radius: 6, x: 0, y: 3)
+                    ZStack {
+                        Circle()
+                            .fill(PixelTheme.accentBlue)
+                            .frame(width: 72, height: 72)
+                            .liquidGlassCircle(tint: PixelTheme.accentBlue)
+                            .shadow(color: PixelTheme.accentBlue.opacity(0.45), radius: 14, x: 0, y: 6)
+
+                        Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.title.weight(.bold))
+                            .foregroundStyle(.white)
+                            .offset(x: playerService.isPlaying ? 0 : 2)
+                    }
                 }
                 .buttonStyle(.plain)
 
                 Button {
                     playerService.skip(by: 5.0)
                 } label: {
-                    VStack(spacing: 1) {
-                        Image(systemName: "goforward.5")
-                            .font(.title3.weight(.semibold))
-                        Text("+5s")
-                            .font(.system(size: 9, weight: .bold))
-                    }
+                    Image(systemName: "goforward.5")
+                        .font(.title2.weight(.semibold))
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
 
                 Button {
                     playerService.skip(by: 10.0)
                 } label: {
-                    VStack(spacing: 1) {
-                        Image(systemName: "goforward.10")
-                            .font(.title3.weight(.semibold))
-                        Text("+10s")
-                            .font(.system(size: 9, weight: .bold))
-                    }
+                    Image(systemName: "goforward.10")
+                        .font(.title2.weight(.semibold))
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
             }
 
-            // Fila inferior del reproductor: Velocidad (0.5x, 1.0x, 1.25x, 1.5x, 2.0x) y Toggle "Saltar silencios"
-            HStack(spacing: 8) {
-                HStack(spacing: 4) {
+            // Fila de velocidades en UNA sola línea ("0.5x", "1.0x", "1.25x", "1.5x", "2.0x") + botón Saltar Silencios
+            VStack(spacing: 12) {
+                HStack(spacing: 8) {
                     ForEach(PlaybackSpeedOption.allCases) { speed in
                         let selected = playerService.playbackSpeed == speed
                         Button {
                             playerService.playbackSpeed = speed
                         } label: {
                             Text(speed.label)
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 5)
-                                .background(
-                                    selected ? PixelTheme.accentBlue : Color.primary.opacity(0.07),
-                                    in: RoundedRectangle(cornerRadius: 7)
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .liquidGlassCapsule(
+                                    tint: selected ? PixelTheme.accentBlue : nil
                                 )
                                 .foregroundStyle(selected ? .white : .primary)
                         }
@@ -698,32 +821,27 @@ struct RecordingDetailView: View {
                     }
                 }
 
-                Spacer()
-
                 Button {
                     playerService.skipSilenceEnabled.toggle()
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 6) {
                         Image(systemName: playerService.skipSilenceEnabled ? "bolt.fill" : "bolt.slash")
                         Text("Saltar silencios")
+                            .lineLimit(1)
                     }
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        playerService.skipSilenceEnabled
-                            ? PixelTheme.successEmerald
-                            : Color.primary.opacity(0.08),
-                        in: Capsule()
+                    .font(.caption.weight(.bold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .liquidGlassCapsule(
+                        tint: playerService.skipSilenceEnabled ? PixelTheme.successEmerald : nil
                     )
                     .foregroundStyle(playerService.skipSilenceEnabled ? .white : .primary)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
         }
-        .padding(.vertical, 10)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -756,7 +874,7 @@ private struct KaraokeSegmentCardView: View {
                                     .foregroundStyle(.white)
                             )
 
-                        Text(speaker.displayName)
+                        Text(speaker.compactLabel)
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(speaker.color)
 

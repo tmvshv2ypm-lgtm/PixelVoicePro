@@ -33,53 +33,45 @@ struct RecordingBoothView: View {
                 let safeScreenWidth = max(320.0, geo.size.width)
                 let contentWidth = safeScreenWidth - 32.0
 
-                ZStack {
-                    VStack(spacing: 10) {
-                        // 1. Cabecera con Fecha y Hora Exacta de Inicio (DD/MM/YYYY - HH:MM:SS AM/PM)
-                        topExactMetadataBanner(contentWidth: contentWidth)
+                VStack(spacing: 10) {
+                    // 1. Título opcional rápido de la nota (sin cronología de fecha/hora en cabina)
+                    topExactMetadataBanner(contentWidth: contentWidth)
 
-                        // 2. Cronómetro de Alta Precisión con Milisegundos (HH:MM:SS.cc) + Detector Visual de Eventos
-                        chronometerAndLiveDetectorSection(contentWidth: contentWidth)
+                    // 2. Cronómetro de Alta Precisión con Milisegundos (HH:MM:SS.cc) + Detector Visual de Eventos
+                    chronometerAndLiveDetectorSection(contentWidth: contentWidth)
 
-                        // 3. Línea de Tiempo con Zoom Gestual tipo CapCut (Pinch-to-Zoom + "Seguir en vivo")
-                        LiveBoothWaveformView(
-                            waveformSamples: recorderService.liveWaveformWindow,
-                            timelineSamples: recorderService.liveTimelineSamples,
-                            spectrumBands: recorderService.liveSpectrumBands,
-                            elapsedTime: recorderService.elapsedTime,
-                            isRecording: recorderService.state == .recording,
-                            activeSpeakerColor: activeSpeakerProfile.color,
-                            liveEvents: recorderService.liveAcousticEvents,
-                            liveBookmarks: recorderService.liveBookmarks,
-                            liveSpeakerTurns: recorderService.liveSpeakerTurns,
-                            speakers: recorderService.liveSpeakers
-                        )
-                        .frame(width: contentWidth)
+                    // 3. Línea de Tiempo CapCut (se expande dinámicamente en Modo Ahorro cuando la transcripción está oculta)
+                    LiveBoothWaveformView(
+                        waveformSamples: recorderService.liveWaveformWindow,
+                        timelineSamples: recorderService.liveTimelineSamples,
+                        spectrumBands: recorderService.liveSpectrumBands,
+                        elapsedTime: recorderService.elapsedTime,
+                        isRecording: recorderService.state == .recording,
+                        activeSpeakerColor: activeSpeakerProfile.color,
+                        liveEvents: recorderService.liveAcousticEvents,
+                        liveBookmarks: recorderService.liveBookmarks,
+                        liveSpeakerTurns: recorderService.liveSpeakerTurns,
+                        speakers: recorderService.liveSpeakers,
+                        expandVertically: !recorderService.isLiveTranscriptionEnabled
+                    )
+                    .frame(width: contentWidth)
+                    .frame(maxHeight: recorderService.isLiveTranscriptionEnabled ? 205 : .infinity)
 
-                        // 4. Barra de Locutores en Vivo y Eventos Acústicos con Scroll Horizontal Estricto
-                        liveSpeakersAndAcousticQuickBar(contentWidth: contentWidth)
+                    // 4. Barra compacta de locutores (L1, L2, L3, L4) y eventos acústicos
+                    liveSpeakersAndAcousticQuickBar(contentWidth: contentWidth)
 
-                        // 5. Sección de Transcripción en Vivo Plegable (Ahorro de RAM y Batería para Clases Largas)
-                        collapsibleLiveTranscriptionSection(contentWidth: contentWidth)
+                    // 5. Control de Transcripción en Vivo Plegable (sin caja vacía al ocultar)
+                    collapsibleLiveTranscriptionSection(contentWidth: contentWidth)
 
-                        Spacer(minLength: 2)
-
-                        // 6. Controles Inferiores Responsivos (Marcador en Vivo, Pausar/Reanudar y Finalizar)
-                        bottomRecordingControls(contentWidth: contentWidth)
-                    }
-                    .padding(.vertical, 6)
-                    .frame(width: safeScreenWidth, height: geo.size.height, alignment: .top)
-                    .clipped()
-                    .disabled(recorderService.state == .finalizing)
-
-                    // 7. Pantalla Superpuesta de Post-Procesamiento Completo (Fragmentos de 45s) al Finalizar
-                    if recorderService.state == .finalizing {
-                        postProcessingProgressOverlay(contentWidth: contentWidth)
-                    }
+                    // 6. Controles Inferiores (Marcador en Vivo, Pausar/Reanudar y Finalizar)
+                    bottomRecordingControls(contentWidth: contentWidth)
                 }
+                .padding(.vertical, 6)
+                .frame(width: safeScreenWidth, height: geo.size.height, alignment: .top)
+                .clipped()
+                .disabled(recorderService.state == .finalizing)
                 .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
             }
-            .navigationTitle("Cabina PixelVoice Pro")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -92,21 +84,6 @@ struct RecordingBoothView: View {
                     .foregroundStyle(.red)
                     .disabled(recorderService.state == .finalizing)
                 }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(PixelTheme.recordRed)
-                            .frame(width: 7, height: 7)
-                        Text("Lock Screen Live")
-                            .font(.caption2.weight(.bold))
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(PixelTheme.recordRed.opacity(0.14), in: Capsule())
-                    .foregroundStyle(PixelTheme.recordRed)
-                }
             }
             .task {
                 await beginRecordingAutomatically()
@@ -114,39 +91,20 @@ struct RecordingBoothView: View {
         }
     }
 
-    // MARK: - 1. Cabecera con Fecha y Hora Exacta de Inicio (Sin etiqueta técnica M4A · AAC · 48kHz)
+    // MARK: - 1. Campo de Título Rápido de la Nota (Sin bloque de cronología en cabina en vivo)
 
     private func topExactMetadataBanner(contentWidth: CGFloat) -> some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "clock.badge.checkmark.fill")
-                    .font(.caption)
-                    .foregroundStyle(PixelTheme.accentBlue)
-
-                Text(
-                    ExactDateFormatter.fullExactTimestamp(
-                        from: recorderService.recordingStartDate ?? Date()
-                    )
-                )
-                .font(.system(.caption, design: .monospaced).weight(.bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-
-                Spacer()
-            }
-
-            HStack(spacing: 8) {
-                Image(systemName: "pencil")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("Título de la clase/nota (se muestra en pantalla bloqueada)...", text: $recorderService.liveCustomDraftTitle)
-                    .submitLabel(.done)
-                    .font(.caption.weight(.semibold))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+        HStack(spacing: 8) {
+            Image(systemName: "pencil")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("Título de la nota (opcional)...", text: $recorderService.liveCustomDraftTitle)
+                .submitLabel(.done)
+                .font(.caption.weight(.semibold))
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
         .frame(width: contentWidth)
     }
 
@@ -201,14 +159,9 @@ struct RecordingBoothView: View {
     private func liveSpeakersAndAcousticQuickBar(contentWidth: CGFloat) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                Text("Locutor:")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-
-                ForEach(1...3, id: \.self) { num in
+                ForEach(1...4, id: \.self) { num in
                     let spkId = "speaker_\(num)"
                     let isCurrent = recorderService.activeSpeakerId == spkId
-                    let label = recorderService.liveSpeakers.first(where: { $0.id == spkId })?.displayName ?? "Locutor \(num)"
                     let color = Color(hex: PixelTheme.colorHex(forSpeakerIndex: num - 1))
 
                     Button {
@@ -218,12 +171,12 @@ struct RecordingBoothView: View {
                             Circle()
                                 .fill(isCurrent ? .white : color)
                                 .frame(width: 6, height: 6)
-                            Text(label)
+                            Text("L\(num)")
                                 .lineLimit(1)
                         }
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
+                        .font(.caption.weight(.bold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
                         .foregroundStyle(isCurrent ? .white : color)
                         .background(
                             Capsule().fill(isCurrent ? color : color.opacity(0.14))
@@ -336,7 +289,7 @@ struct RecordingBoothView: View {
 
                                     VStack(alignment: .leading, spacing: 4) {
                                         HStack(spacing: 6) {
-                                            Text(speaker.displayName)
+                                            Text(speaker.shortBadgeCode)
                                                 .font(.caption.weight(.bold))
                                                 .foregroundStyle(speaker.color)
                                                 .lineLimit(1)
@@ -388,7 +341,7 @@ struct RecordingBoothView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(width: contentWidth)
-                    .frame(height: 145)
+                    .frame(height: 155)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(Color(uiColor: .secondarySystemGroupedBackground))
@@ -400,33 +353,6 @@ struct RecordingBoothView: View {
                         }
                     }
                 }
-            } else {
-                // Tarjeta compacta de modo ahorro de RAM y batería para clases de varias horas
-                HStack(spacing: 10) {
-                    Image(systemName: "battery.100percent.bolt")
-                        .font(.title3)
-                        .foregroundStyle(PixelTheme.successEmerald)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Modo Ahorro para Clases Largas Activo")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.primary)
-                        Text("Grabando audio ligero con mínimo uso de RAM y batería. Al finalizar se procesará el 100% de la transcripción, locutores y eventos en bloques de 45s.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-                    }
-                }
-                .padding(10)
-                .frame(width: contentWidth, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(PixelTheme.successEmerald.opacity(0.09))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(PixelTheme.successEmerald.opacity(0.3), lineWidth: 1)
-                )
             }
         }
         .frame(width: contentWidth)
@@ -510,19 +436,19 @@ struct RecordingBoothView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
                     .padding(.horizontal, 10)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.15), lineWidth: 1))
+                    .liquidGlassCapsule()
                 }
                 .buttonStyle(.plain)
 
                 Button {
                     Task {
-                        if let completedRecording = await recorderService.stopAndFinalizeRecording(
+                        if let finalized = await recorderService.stopAndFinalizeRecording(
                             customTitle: recorderService.liveCustomDraftTitle.isEmpty ? nil : recorderService.liveCustomDraftTitle,
                             initialTags: selectedDraftTags,
                             performFullPostProcessing: true
                         ) {
-                            viewModel.insertNewRecording(completedRecording, presentQuickTitleEditor: true)
+                            viewModel.insertNewRecording(finalized.recording, presentQuickTitleEditor: true)
+                            viewModel.enqueueBackgroundPostProcessing(for: finalized.recording, payload: finalized.payload)
                         }
                         dismiss()
                     }
@@ -540,14 +466,7 @@ struct RecordingBoothView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
                     .padding(.horizontal, 10)
-                    .background(
-                        LinearGradient(
-                            colors: [PixelTheme.accentBlue, PixelTheme.accentIndigo],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: Capsule()
-                    )
+                    .liquidGlassCapsule(tint: PixelTheme.accentBlue)
                     .shadow(color: PixelTheme.accentBlue.opacity(0.35), radius: 8, x: 0, y: 4)
                 }
                 .buttonStyle(.plain)
@@ -555,52 +474,6 @@ struct RecordingBoothView: View {
             .frame(width: contentWidth)
         }
         .frame(width: contentWidth)
-    }
-
-    // MARK: - 7. Pantalla de Progreso de Post-Procesamiento Completo (Fragmentos de 45s)
-
-    private func postProcessingProgressOverlay(contentWidth: CGFloat) -> some View {
-        ZStack {
-            Color.black.opacity(0.55)
-                .ignoresSafeArea()
-
-            VStack(spacing: 16) {
-                ProgressView()
-                    .scaleEffect(1.35)
-                    .tint(PixelTheme.accentBlue)
-
-                Text("Procesando Grabación Completa")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.primary)
-
-                Text(recorderService.postProcessingStatusText)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 8)
-
-                VStack(spacing: 6) {
-                    ProgressView(value: recorderService.postProcessingProgress, total: 1.0)
-                        .tint(PixelTheme.accentBlue)
-
-                    Text("\(Int(recorderService.postProcessingProgress * 100))% completado")
-                        .font(.system(.caption2, design: .monospaced).weight(.bold))
-                        .foregroundStyle(PixelTheme.accentBlue)
-                }
-
-                Text("Separando locutores (Locutor 1, 2, 3...), detectando eventos acústicos y transcribiendo en bloques seguros de 45s.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(22)
-            .frame(width: min(340, contentWidth))
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
-            )
-            .shadow(color: .black.opacity(0.28), radius: 18, x: 0, y: 8)
-        }
     }
 
     private func beginRecordingAutomatically() async {

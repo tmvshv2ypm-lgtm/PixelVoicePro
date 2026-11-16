@@ -19,7 +19,7 @@ struct SpeakerTurnMarker: Identifiable, Codable, Hashable {
 }
 
 /// Motor de Identificación y Separación de Locutores (Speaker Diarization) basado en análisis acústico DSP (`vDSP`).
-/// Detecta cambios de timbre y frecuencia fundamental ($F_0$) entre hablantes y los agrupa como Locutor 1, Locutor 2, etc.
+/// Thread-safe mediante `NSLock` para ejecutarse fuera del hilo principal sin afectar los 60 FPS de la interfaz.
 final class SpeakerDiarizationService {
     private struct SpeakerCluster {
         var profile: SpeakerProfile
@@ -29,6 +29,7 @@ final class SpeakerDiarizationService {
         var lastActiveTimestamp: TimeInterval
     }
 
+    private let stateLock = NSLock()
     private var clusters: [SpeakerCluster] = []
     private(set) var currentSpeakerId: String = "speaker_1"
     private(set) var currentPitchHz: Double = 0.0
@@ -39,7 +40,9 @@ final class SpeakerDiarizationService {
     private var timelineAssignments: [(timestamp: TimeInterval, speakerId: String)] = []
 
     var speakerTurnMarkers: [SpeakerTurnMarker] {
-        timelineAssignments.map { SpeakerTurnMarker(timestamp: $0.timestamp, speakerId: $0.speakerId) }
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return timelineAssignments.map { SpeakerTurnMarker(timestamp: $0.timestamp, speakerId: $0.speakerId) }
     }
 
     /// Umbral mínimo de energía RMS para considerar que hay voz activa
@@ -54,6 +57,8 @@ final class SpeakerDiarizationService {
     }
 
     func reset() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         let initialSpeaker = SpeakerProfile.createDefault(number: 1, pitchHz: 140.0, centroidHz: 1600.0)
         clusters = [
             SpeakerCluster(
@@ -73,12 +78,16 @@ final class SpeakerDiarizationService {
 
     /// Devuelve todos los perfiles de locutores detectados hasta el momento.
     var detectedSpeakers: [SpeakerProfile] {
-        clusters.map(\.profile)
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return clusters.map(\.profile)
     }
 
     /// Permite al usuario o al sistema forzar manualmente el cambio o creación de un locutor durante una entrevista en vivo.
     @discardableResult
     func selectOrCreateSpeaker(number: Int, at timestamp: TimeInterval) -> SpeakerProfile {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         let targetId = "speaker_\(number)"
         if let index = clusters.firstIndex(where: { $0.profile.id == targetId }) {
             currentSpeakerId = targetId
@@ -109,16 +118,41 @@ final class SpeakerDiarizationService {
         }
     }
 
-    /// Procesa un buffer de audio PCM en tiempo real, extrae el pitch fundamental ($F_0$) y el centroide espectral,
-    /// y determina qué locutor está hablando en el instante `timestamp`.
+    /// Procesa un buffer de audio PCM en tiempo real.
     func processAudioBuffer(_ buffer: AVAudioPCMBuffer, at timestamp: TimeInterval) -> (speakerId: String, pitchHz: Double, isVoiceActive: Bool) {
         guard let channelData = buffer.floatChannelData?[0] else {
-            return (currentSpeakerId, currentPitchHz, false)
+            stateLock.lock()
+            let spk = currentSpeakerId
+            let pitch = currentPitchHz
+            stateLock.unlock()
+            return (spk, pitch, false)
         }
         let frameLength = Int(buffer.frameLength)
         let sampleRate = buffer.format.sampleRate
+        return processSamplePointer(channelData, frameLength: frameLength, sampleRate: sampleRate, at: timestamp)
+    }
+
+    /// Versión libre de AVAudioPCMBuffer para procesar copias ligeras de muestras en una cola serial en segundo plano.
+    func processFloatSamples(_ samples: [Float], sampleRate: Double, at timestamp: TimeInterval) -> (speakerId: String, pitchHz: Double, isVoiceActive: Bool) {
+        samples.withUnsafeBufferPointer { ptr in
+            guard let base = ptr.baseAddress else {
+                stateLock.lock()
+                let spk = currentSpeakerId
+                let pitch = currentPitchHz
+                stateLock.unlock()
+                return (spk, pitch, false)
+            }
+            return processSamplePointer(base, frameLength: samples.count, sampleRate: sampleRate, at: timestamp)
+        }
+    }
+
+    private func processSamplePointer(_ channelData: UnsafePointer<Float>, frameLength: Int, sampleRate: Double, at timestamp: TimeInterval) -> (speakerId: String, pitchHz: Double, isVoiceActive: Bool) {
         guard frameLength >= 512, sampleRate > 0 else {
-            return (currentSpeakerId, currentPitchHz, false)
+            stateLock.lock()
+            let spk = currentSpeakerId
+            let pitch = currentPitchHz
+            stateLock.unlock()
+            return (spk, pitch, false)
         }
 
         // 1. Calcular energía RMS con vDSP
@@ -126,8 +160,11 @@ final class SpeakerDiarizationService {
         vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
 
         guard rms >= voiceActivityThreshold else {
+            stateLock.lock()
             currentPitchHz = 0.0
-            return (currentSpeakerId, 0.0, false)
+            let spk = currentSpeakerId
+            stateLock.unlock()
+            return (spk, 0.0, false)
         }
 
         // 2. Estimar Frecuencia Fundamental (Pitch F0) mediante autocorrelación acotada (75 Hz - 350 Hz)
@@ -137,12 +174,14 @@ final class SpeakerDiarizationService {
             sampleRate: sampleRate
         )
 
-        // 3. Estimar Centroide Espectral y Tasa de Cruces por Cero (ZCR) para el timbre vocal
+        // 3. Estimar Centroide Espectral y Tasa de Cruces por Cero (ZCR)
         let zcr = computeZeroCrossingRate(samples: channelData, frameCount: frameLength, sampleRate: sampleRate)
         let spectralCentroid = max(600.0, min(3800.0, (estimatedPitch * 6.5) + (zcr * 0.45)))
 
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
         guard estimatedPitch >= 75.0 && estimatedPitch <= 360.0 else {
-            // Sonido no periódico o consonante fricativa: mantener el locutor actual
             lastSpeechActiveTime = timestamp
             return (currentSpeakerId, currentPitchHz, true)
         }
@@ -159,28 +198,37 @@ final class SpeakerDiarizationService {
             zeroCrossingRate: zcr
         )
 
-        let assignedId = assignSpeakerCluster(for: feature, pauseDurationBeforeFrame: pauseBeforeSpeech)
+        let assignedId = assignSpeakerClusterLocked(for: feature, pauseDurationBeforeFrame: pauseBeforeSpeech)
         return (assignedId, estimatedPitch, true)
     }
 
-    /// Devuelve el `speakerId` activo para cualquier instante de tiempo dado.
+    /// Devuelve el `speakerId` activo para cualquier instante de tiempo dado (búsqueda binaria O(log N)).
     func speakerId(at timestamp: TimeInterval) -> String {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         guard !timelineAssignments.isEmpty else { return "speaker_1" }
-        var matched = timelineAssignments[0].speakerId
-        for entry in timelineAssignments {
-            if entry.timestamp <= timestamp + 0.15 {
-                matched = entry.speakerId
+        var low = 0
+        var high = timelineAssignments.count - 1
+        var result = timelineAssignments[0].speakerId
+        while low <= high {
+            let mid = (low + high) / 2
+            if timelineAssignments[mid].timestamp <= timestamp + 0.15 {
+                result = timelineAssignments[mid].speakerId
+                low = mid + 1
             } else {
-                break
+                high = mid - 1
             }
         }
-        return matched
+        return result
     }
 
     /// Escanea un archivo de audio guardado en disco para extraer cambios de locutor (Pitch F0 y centroide espectral)
-    /// cuando la grabación se realizó en modo de ahorro de batería sin análisis continuo en vivo.
+    /// cuando la grabación se realizó en modo de ahorro de batería.
     func analyzeAudioFileOfflineIfNeeded(url: URL) {
-        guard timelineAssignments.count <= 1 else { return }
+        stateLock.lock()
+        let count = timelineAssignments.count
+        stateLock.unlock()
+        guard count <= 1 else { return }
         guard let audioFile = try? AVAudioFile(forReading: url) else { return }
         let format = audioFile.processingFormat
         let sampleRate = format.sampleRate
@@ -188,7 +236,7 @@ final class SpeakerDiarizationService {
         guard sampleRate > 0, totalFrames > 2048 else { return }
 
         let windowSize: AVAudioFrameCount = 2048
-        let stepFrames = AVAudioFramePosition(sampleRate * 0.25) // Muestrear cada 250ms para velocidad extrema en clases largas
+        let stepFrames = AVAudioFramePosition(sampleRate * 0.4) // Muestrear cada 400ms para máxima velocidad en clases de 4 horas
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: windowSize) else { return }
 
         var frameCursor: AVAudioFramePosition = 0
@@ -207,9 +255,20 @@ final class SpeakerDiarizationService {
 
     // MARK: - Algoritmo de Clustering Online con Histéresis Acústica
 
-    private func assignSpeakerCluster(for feature: VocalFeatureVector, pauseDurationBeforeFrame: TimeInterval) -> String {
+    private func assignSpeakerClusterLocked(for feature: VocalFeatureVector, pauseDurationBeforeFrame: TimeInterval) -> String {
         if clusters.isEmpty {
-            reset()
+            let initialSpeaker = SpeakerProfile.createDefault(number: 1, pitchHz: feature.pitchHz, centroidHz: feature.spectralCentroidHz)
+            clusters = [
+                SpeakerCluster(
+                    profile: initialSpeaker,
+                    meanPitchHz: feature.pitchHz,
+                    meanCentroidHz: feature.spectralCentroidHz,
+                    sampleCount: 1,
+                    lastActiveTimestamp: feature.timestamp
+                )
+            ]
+            currentSpeakerId = initialSpeaker.id
+            timelineAssignments = [(feature.timestamp, initialSpeaker.id)]
         }
 
         // Si el primer cluster apenas se inicializó con valores por defecto, calibrarlo con la primera voz real

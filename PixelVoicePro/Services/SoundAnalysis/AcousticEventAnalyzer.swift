@@ -7,11 +7,24 @@ import Accelerate
 /// Soporta tanto modo en vivo como análisis completo post-grabación para ahorrar batería en clases largas.
 final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
     private let analysisQueue = DispatchQueue(label: "com.pixelvoicepro.soundanalysis", qos: .userInitiated)
+    private let stateLock = NSLock()
     private var streamAnalyzer: SNAudioStreamAnalyzer?
     private var currentSampleTime: AVAudioFramePosition = 0
 
-    private(set) var detectedEvents: [AcousticEvent] = []
-    private(set) var silenceIntervals: [SilenceInterval] = []
+    private var _detectedEvents: [AcousticEvent] = []
+    private var _silenceIntervals: [SilenceInterval] = []
+
+    var detectedEvents: [AcousticEvent] {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _detectedEvents
+    }
+
+    var silenceIntervals: [SilenceInterval] {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _silenceIntervals
+    }
 
     /// Seguimiento de silencios en tiempo real para insertar `[⏸️ Pausa larga]` y alimentar "Saltar Silencios"
     private var silenceStartTime: TimeInterval?
@@ -28,11 +41,13 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
     var onLiveStatusChanged: ((String, AcousticEventType?) -> Void)?
 
     func reset() {
-        detectedEvents.removeAll()
-        silenceIntervals.removeAll()
+        stateLock.lock()
+        _detectedEvents.removeAll()
+        _silenceIntervals.removeAll()
         silenceStartTime = nil
         lastEventByType.removeAll()
         currentSampleTime = 0
+        stateLock.unlock()
     }
 
     /// Configura el `SNAudioStreamAnalyzer` con el formato del bus de entrada de `AVAudioEngine`.
@@ -52,10 +67,15 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
     }
 
     func stopLiveStreamAnalysis(finalDuration: TimeInterval) {
-        if let start = silenceStartTime {
+        stateLock.lock()
+        let start = silenceStartTime
+        silenceStartTime = nil
+        stateLock.unlock()
+        if let start {
             finalizeSilenceInterval(from: start, to: finalDuration)
-            silenceStartTime = nil
         }
+        onAcousticEventDetected = nil
+        onLiveStatusChanged = nil
         analysisQueue.sync {
             streamAnalyzer?.removeAllRequests()
             streamAnalyzer = nil
@@ -80,8 +100,16 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
 
         var rms: Float = 0.0
         vDSP_rmsqv(floatData, 1, &rms, vDSP_Length(frameCount))
+        analyzeRMS(rms, at: timestamp)
+    }
 
+    /// Versión libre de AVAudioPCMBuffer para procesar el RMS en la cola DSP en segundo plano sin tocar @MainActor.
+    func analyzeRMS(_ rms: Float, at timestamp: TimeInterval) {
         let isSilent = rms < 0.011
+        var intervalToFinalize: (TimeInterval, TimeInterval)?
+        var pauseEventToEmit: AcousticEvent?
+
+        stateLock.lock()
         if isSilent {
             if silenceStartTime == nil {
                 silenceStartTime = timestamp
@@ -90,21 +118,28 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
                 if elapsedSilence >= longPauseThresholdSeconds {
                     let lastPauseTime = lastEventByType[.longPause] ?? -100.0
                     if timestamp - lastPauseTime >= 6.0 {
-                        let event = AcousticEvent(
+                        pauseEventToEmit = AcousticEvent(
                             type: .longPause,
                             timestamp: start,
                             duration: elapsedSilence,
                             confidence: 0.96
                         )
-                        recordDetectedEvent(event)
                     }
                 }
             }
         } else {
             if let start = silenceStartTime {
-                finalizeSilenceInterval(from: start, to: timestamp)
+                intervalToFinalize = (start, timestamp)
                 silenceStartTime = nil
             }
+        }
+        stateLock.unlock()
+
+        if let interval = intervalToFinalize {
+            finalizeSilenceInterval(from: interval.0, to: interval.1)
+        }
+        if let pauseEvent = pauseEventToEmit {
+            recordDetectedEvent(pauseEvent)
         }
     }
 
@@ -133,19 +168,26 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
 
     /// Permite registrar un evento acústico directamente o desde post-procesamiento.
     func recordDetectedEvent(_ event: AcousticEvent) {
+        stateLock.lock()
         let lastTime = lastEventByType[event.type] ?? -100.0
-        // Evitar duplicados consecutivos del mismo evento en menos de 6.0 segundos
-        guard (event.timestamp - lastTime) >= 6.0 else { return }
-
+        guard (event.timestamp - lastTime) >= 6.0 else {
+            stateLock.unlock()
+            return
+        }
         lastEventByType[event.type] = event.timestamp
-        detectedEvents.append(event)
+        _detectedEvents.append(event)
+        let eventHandler = onAcousticEventDetected
+        let statusHandler = onLiveStatusChanged
+        stateLock.unlock()
 
-        DispatchQueue.main.async { [weak self] in
-            self?.onAcousticEventDetected?(event)
-            self?.onLiveStatusChanged?(
-                "\(event.type.emoji) \(event.type.spanishTitle) detectado (\(Int(event.confidence * 100))%)",
-                event.type
-            )
+        if eventHandler != nil || statusHandler != nil {
+            DispatchQueue.main.async {
+                eventHandler?(event)
+                statusHandler?(
+                    "\(event.type.emoji) \(event.type.spanishTitle) detectado (\(Int(event.confidence * 100))%)",
+                    event.type
+                )
+            }
         }
     }
 
@@ -153,19 +195,25 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
         let duration = end - start
         guard duration >= skippableSilenceThresholdSeconds else { return }
         let interval = SilenceInterval(startTime: start, endTime: end)
-        silenceIntervals.append(interval)
+        var longPauseEvent: AcousticEvent?
 
+        stateLock.lock()
+        _silenceIntervals.append(interval)
         if duration >= longPauseThresholdSeconds {
             let lastPauseTime = lastEventByType[.longPause] ?? -100.0
             if start - lastPauseTime >= 6.0 {
-                let event = AcousticEvent(
+                longPauseEvent = AcousticEvent(
                     type: .longPause,
                     timestamp: start,
                     duration: duration,
                     confidence: 0.95
                 )
-                recordDetectedEvent(event)
             }
+        }
+        stateLock.unlock()
+
+        if let longPauseEvent {
+            recordDetectedEvent(longPauseEvent)
         }
     }
 

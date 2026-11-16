@@ -10,16 +10,23 @@ struct DashboardView: View {
 
     @FocusState private var isSearchFieldFocused: Bool
     @State private var recordingToExport: VoiceRecording?
+    @State private var showTagManagerSheet: Bool = false
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
+                        // Barra discreta de progreso cuando hay post-procesamiento en segundo plano
+                        if viewModel.isBackgroundProcessingActive {
+                            backgroundProcessingBanner
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+
                         // 1. Buscador Global Profundo con gestión limpia de foco de teclado
                         globalSearchBarSection
 
-                        // 2. Barras de Filtros Desplegables Estilo Apple Mail (Categorías y Horario)
+                        // 2. Barra minimalista de etiquetas ([Todas], [Favoritas], [+]) y franjas
                         appleMailStyleFiltersSection
 
                         // 3. Si hay consulta activa en el Buscador Global, mostrar tarjetas de coincidencia exacta al segundo
@@ -43,9 +50,10 @@ struct DashboardView: View {
                         }
                 )
 
-                // 5. Botón Flotante Inferior Limpio: "Nueva Grabación"
+                // 5. Botón Flotante Circular Liquid Glass (estilo Apple Voice Memos)
                 floatingRecordButtonBar
             }
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: viewModel.isBackgroundProcessingActive)
             .onAppear {
                 dismissKeyboard()
             }
@@ -56,10 +64,8 @@ struct DashboardView: View {
                         dismissKeyboard()
                         viewModel.isShowingSettingsSheet = true
                     } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.subheadline.weight(.bold))
-                            .frame(width: 34, height: 34)
-                            .background(Color.primary.opacity(0.08), in: Circle())
+                        Image(systemName: "gearshape")
+                            .font(.body.weight(.medium))
                     }
                     .accessibilityLabel("Ajustes")
                 }
@@ -95,7 +101,44 @@ struct DashboardView: View {
                     recorderService: recorderService
                 )
             }
+            .sheet(isPresented: $showTagManagerSheet) {
+                TagManagerSheet(viewModel: viewModel, mode: .filterLibrary)
+            }
         }
+    }
+
+    private var backgroundProcessingBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .scaleEffect(0.75)
+                    .tint(PixelTheme.accentBlue)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Procesando \(viewModel.backgroundProcessingTitle)")
+                        .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                    if !viewModel.backgroundProcessingStatus.isEmpty {
+                        Text(viewModel.backgroundProcessingStatus)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 6)
+
+                Text("\(Int(viewModel.backgroundProcessingProgress * 100))%")
+                    .font(.system(.caption2, design: .monospaced).weight(.bold))
+                    .foregroundStyle(PixelTheme.accentBlue)
+            }
+
+            ProgressView(value: viewModel.backgroundProcessingProgress, total: 1.0)
+                .tint(PixelTheme.accentBlue)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .liquidGlassCapsule(tint: PixelTheme.accentBlue.opacity(0.14), interactive: false)
     }
 
     private func dismissKeyboard() {
@@ -185,23 +228,31 @@ struct DashboardView: View {
                         }
                     }
 
-                    ForEach(viewModel.availableTags) { tag in
+                    if let activeTag = viewModel.selectedTagFilter {
                         AppleMailFilterPill(
-                            title: tag.name,
-                            icon: tag.iconName,
-                            color: tag.color,
-                            isSelected: viewModel.selectedTagFilter?.id == tag.id
+                            title: activeTag.name,
+                            icon: activeTag.iconName,
+                            color: activeTag.color,
+                            isSelected: true
                         ) {
                             dismissKeyboard()
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
-                                if viewModel.selectedTagFilter?.id == tag.id {
-                                    viewModel.selectedTagFilter = nil
-                                } else {
-                                    viewModel.selectedTagFilter = tag
-                                }
+                                viewModel.selectedTagFilter = nil
                             }
                         }
                     }
+
+                    Button {
+                        dismissKeyboard()
+                        showTagManagerSheet = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.subheadline.weight(.bold))
+                            .frame(width: 32, height: 32)
+                            .liquidGlassCircle()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Seleccionar, crear u ocultar etiquetas")
                 }
             }
 
@@ -382,48 +433,28 @@ struct DashboardView: View {
 
     private var floatingRecordButtonBar: some View {
         HStack {
+            Spacer()
             Button {
                 dismissKeyboard()
                 viewModel.isShowingRecordingBooth = true
             } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.white.opacity(0.24))
-                            .frame(width: 34, height: 34)
-                        Circle()
-                            .fill(Color.white)
-                            .frame(width: 14, height: 14)
-                    }
+                ZStack {
+                    Circle()
+                        .fill(Color.clear)
+                        .frame(width: 74, height: 74)
+                        .liquidGlassCircle(tint: PixelTheme.recordRed.opacity(0.16))
 
-                    Spacer()
-
-                    Text("Nueva Grabación")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(.white)
-
-                    Spacer()
-
-                    Image(systemName: "waveform.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.white)
+                    Circle()
+                        .fill(PixelTheme.recordRed)
+                        .frame(width: 52, height: 52)
+                        .shadow(color: PixelTheme.recordRed.opacity(0.38), radius: 10, x: 0, y: 4)
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
-                .background(
-                    LinearGradient(
-                        colors: [PixelTheme.recordRed, Color(hex: "#DC2626")],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    in: Capsule()
-                )
-                .shadow(color: PixelTheme.recordRed.opacity(0.42), radius: 14, x: 0, y: 6)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Nueva Grabación")
+            Spacer()
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 12)
+        .padding(.bottom, 16)
     }
 }
 
@@ -526,6 +557,12 @@ private struct RecordingListCardView: View {
                     .font(.system(.caption, design: .monospaced).weight(.semibold))
                     .foregroundStyle(.primary)
 
+                if recording.isProcessingBackground {
+                    Label("Analizando...", systemImage: "sparkles")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PixelTheme.accentBlue)
+                }
+
                 Spacer()
 
                 if !recording.bookmarks.isEmpty {
@@ -575,7 +612,7 @@ private struct RecordingListCardView: View {
                             Circle()
                                 .fill(speaker.color)
                                 .frame(width: 6, height: 6)
-                            Text(speaker.displayName)
+                            Text(speaker.compactLabel)
                         }
                         .font(.system(size: 10, weight: .semibold))
                         .padding(.horizontal, 8)

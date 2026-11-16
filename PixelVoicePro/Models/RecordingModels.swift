@@ -134,12 +134,25 @@ struct SpeakerProfile: Identifiable, Codable, Hashable {
     var totalSpeakingDuration: TimeInterval
     var wordCount: Int
 
-    /// Nombre visible en toda la nota: usa el nombre real asignado por el usuario o "Locutor X" por defecto.
+    /// Nombre visible en la vista de detalle: usa el nombre real asignado por el usuario o "Locutor X" por defecto.
     var displayName: String {
         if let custom = customName?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
             return custom
         }
         return defaultLabel
+    }
+
+    /// Etiqueta ultra compacta para la Cabina de Grabación en Vivo: L1, L2, L3, L4...
+    var shortBadgeCode: String {
+        "L\(speakerNumber)"
+    }
+
+    /// Nombre compacto en toda la interfaz: nombre personalizado si existe, o `L1`, `L2`, `L3`...
+    var compactLabel: String {
+        if let custom = customName?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
+            return custom
+        }
+        return shortBadgeCode
     }
 
     var initials: String {

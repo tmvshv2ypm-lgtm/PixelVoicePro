@@ -9,12 +9,21 @@ struct QuickRenameAndTagSheet: View {
 
     @State private var editedTitle: String = ""
     @State private var selectedTags: [TagItem] = []
-    @State private var newCustomTagName: String = ""
-    @State private var selectedCustomColorHex: String = "#3B82F6"
+    @State private var showTagManagerSheet: Bool = false
 
-    private let customColorPalette: [String] = [
-        "#3B82F6", "#10B981", "#F59E0B", "#EC4899", "#8B5CF6", "#06B6D4", "#EF4444", "#14B8A6"
-    ]
+    private var compactQuickTags: [TagItem] {
+        var result = selectedTags
+        for tag in viewModel.visibleAvailableTags where !result.contains(where: { $0.id == tag.id }) {
+            if result.count >= max(2, selectedTags.count) && result.count >= 2 {
+                break
+            }
+            result.append(tag)
+            if result.count == 2 && selectedTags.isEmpty {
+                break
+            }
+        }
+        return result
+    }
 
     var body: some View {
         NavigationStack {
@@ -58,74 +67,46 @@ struct QuickRenameAndTagSheet: View {
                     .padding(.vertical, 4)
                 }
 
-                Section("Etiquetas de Colores (Tags)") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 135), spacing: 10)], spacing: 10) {
-                        ForEach(viewModel.availableTags) { tag in
-                            let isSelected = selectedTags.contains(where: { $0.id == tag.id })
-                            Button {
-                                toggleSelection(for: tag)
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: tag.iconName)
-                                        .font(.caption.weight(.bold))
-                                    Text(tag.name)
-                                        .font(.caption.weight(.semibold))
-                                        .lineLimit(1)
-                                    Spacer(minLength: 2)
-                                    if isSelected {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.caption)
+                Section("Etiquetas") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(compactQuickTags) { tag in
+                                let isSelected = selectedTags.contains(where: { $0.id == tag.id })
+                                Button {
+                                    toggleSelection(for: tag)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: tag.iconName)
+                                            .font(.caption.weight(.bold))
+                                        Text(tag.name)
+                                            .font(.caption.weight(.semibold))
+                                            .lineLimit(1)
+                                        if isSelected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.caption2)
+                                        }
                                     }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .foregroundStyle(isSelected ? .white : tag.color)
+                                    .background(
+                                        Capsule()
+                                            .fill(isSelected ? tag.color : tag.color.opacity(0.14))
+                                    )
                                 }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .foregroundStyle(isSelected ? .white : tag.color)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(isSelected ? tag.color : tag.color.opacity(0.14))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .strokeBorder(tag.color.opacity(0.45), lineWidth: 1)
-                                )
+                                .buttonStyle(.plain)
+                            }
+
+                            Button {
+                                showTagManagerSheet = true
+                            } label: {
+                                Image(systemName: "plus")
+                                    .font(.subheadline.weight(.bold))
+                                    .frame(width: 34, height: 34)
+                                    .liquidGlassCircle()
                             }
                             .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-
-                Section("Crear Nueva Etiqueta Personalizada") {
-                    HStack {
-                        TextField("Nombre (ej. Examen Final, Tesis)", text: $newCustomTagName)
-                        Button("Añadir") {
-                            let created = viewModel.createCustomTag(
-                                name: newCustomTagName,
-                                colorHex: selectedCustomColorHex
-                            )
-                            if !selectedTags.contains(where: { $0.id == created.id }) {
-                                selectedTags.append(created)
-                            }
-                            newCustomTagName = ""
-                        }
-                        .disabled(newCustomTagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .buttonStyle(.borderedProminent)
-                    }
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(customColorPalette, id: \.self) { hex in
-                                Circle()
-                                    .fill(Color(hex: hex))
-                                    .frame(width: 28, height: 28)
-                                    .overlay(
-                                        Circle()
-                                            .strokeBorder(Color.primary, lineWidth: selectedCustomColorHex == hex ? 2.5 : 0)
-                                    )
-                                    .onTapGesture {
-                                        selectedCustomColorHex = hex
-                                    }
-                            }
+                            .accessibilityLabel("Añadir o gestionar etiquetas")
                         }
                         .padding(.vertical, 4)
                     }
@@ -150,6 +131,12 @@ struct QuickRenameAndTagSheet: View {
                     }
                     .fontWeight(.bold)
                 }
+            }
+            .sheet(isPresented: $showTagManagerSheet) {
+                TagManagerSheet(
+                    viewModel: viewModel,
+                    mode: .assignToRecording(selectedTags: $selectedTags)
+                )
             }
             .onAppear {
                 editedTitle = recording.title

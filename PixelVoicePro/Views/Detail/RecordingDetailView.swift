@@ -254,7 +254,7 @@ struct RecordingDetailView: View {
                 Spacer()
             }
 
-            // Fecha y hora exacta hasta el segundo obligatoria debajo del título (sin peso ni formato técnico repetido)
+            // Única línea compacta: Fecha y hora exacta + ícono franja (☀️/🌅/🌙) + etiquetas de la nota
             HStack(spacing: 8) {
                 HStack(spacing: 4) {
                     Image(systemName: "calendar.badge.clock")
@@ -263,7 +263,10 @@ struct RecordingDetailView: View {
                     Text(recording.formattedExactCreationDate)
                         .font(.system(.caption, design: .monospaced).weight(.bold))
                         .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
+                .fixedSize(horizontal: true, vertical: false)
 
                 Image(systemName: recording.dayPeriod.iconName)
                     .font(.caption.weight(.bold))
@@ -271,31 +274,31 @@ struct RecordingDetailView: View {
                     .background(Color(hex: recording.dayPeriod.badgeColorHex).opacity(0.16), in: Circle())
                     .foregroundStyle(Color(hex: recording.dayPeriod.badgeColorHex))
 
-                Spacer()
-            }
-
-            // Etiquetas de color activas
-            if !recording.tags.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(recording.tags) { tag in
-                            HStack(spacing: 4) {
-                                Image(systemName: tag.iconName)
-                                Text(tag.name)
+                if !recording.tags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(recording.tags) { tag in
+                                HStack(spacing: 4) {
+                                    Image(systemName: tag.iconName)
+                                    Text(tag.name)
+                                }
+                                .font(.system(size: 10, weight: .bold))
+                                .lineLimit(1)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(tag.color.opacity(0.15), in: Capsule())
+                                .foregroundStyle(tag.color)
                             }
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(tag.color.opacity(0.15), in: Capsule())
-                            .foregroundStyle(tag.color)
                         }
                     }
+                } else {
+                    Spacer(minLength: 0)
                 }
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 6)
-        .padding(.bottom, 6)
+        .padding(.top, 2)
+        .padding(.bottom, 4)
     }
 
     // MARK: - 2. Buscador Local con Navegación de Coincidencias

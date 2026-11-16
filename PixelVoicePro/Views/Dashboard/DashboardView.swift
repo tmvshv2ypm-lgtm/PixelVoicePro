@@ -9,22 +9,34 @@ struct DashboardView: View {
     @ObservedObject var recorderService: AudioRecorderService
 
     @FocusState private var isSearchFieldFocused: Bool
+    @Namespace private var tagButtonNamespace
+    @State private var isSearchExpanded: Bool = false
     @State private var recordingToExport: VoiceRecording?
     @State private var showTagManagerSheet: Bool = false
+
+    private var shouldShowSearchBar: Bool {
+        isSearchExpanded || !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 11) {
                         // Barra discreta de progreso cuando hay post-procesamiento en segundo plano
                         if viewModel.isBackgroundProcessingActive {
                             backgroundProcessingBanner
                                 .transition(.move(edge: .top).combined(with: .opacity))
                         }
 
-                        // 1. Buscador Global Profundo con gestión limpia de foco de teclado
-                        globalSearchBarSection
+                        // 1. Buscador Global colapsable (aparece al tocar la lupa o deslizar hacia abajo)
+                        if shouldShowSearchBar {
+                            globalSearchBarSection
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .top).combined(with: .opacity),
+                                    removal: .opacity
+                                ))
+                        }
 
                         // 2. Barra minimalista de etiquetas ([Todas], [Favoritas], [+]) y franjas
                         appleMailStyleFiltersSection
@@ -38,15 +50,29 @@ struct DashboardView: View {
                         chronologicalRecordingsListSection
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 6)
-                    .padding(.bottom, 110)
+                    .padding(.top, 2)
+                    .padding(.bottom, 108)
+                }
+                .scrollBounceBehavior(.always, axes: .vertical)
+                .onPullDownReveal(threshold: 42.0) {
+                    if !isSearchExpanded {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        openSearchBar(focusKeyboard: true)
+                    }
                 }
                 .scrollDismissesKeyboard(.immediately)
                 .background(
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            dismissKeyboard()
+                            if isSearchFieldFocused {
+                                dismissKeyboard()
+                            }
+                            if isSearchExpanded && viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                    isSearchExpanded = false
+                                }
+                            }
                         }
                 )
 
@@ -58,10 +84,21 @@ struct DashboardView: View {
                 dismissKeyboard()
             }
             .navigationTitle("PixelVoice Pro")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
-                        dismissKeyboard()
+                        toggleSearchBar()
+                    } label: {
+                        Image(systemName: shouldShowSearchBar ? "xmark" : "magnifyingglass")
+                            .font(.body.weight(.medium))
+                    }
+                    .accessibilityLabel(shouldShowSearchBar ? "Cerrar búsqueda" : "Buscar notas")
+
+                    Button {
+                        if isSearchFieldFocused {
+                            dismissKeyboard()
+                        }
                         viewModel.isShowingSettingsSheet = true
                     } label: {
                         Image(systemName: "gearshape")
@@ -103,6 +140,7 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showTagManagerSheet) {
                 TagManagerSheet(viewModel: viewModel, mode: .filterLibrary)
+                    .morphZoomSheetTransition(sourceID: "TAG_MANAGER_SOURCE", in: tagButtonNamespace)
             }
         }
     }
@@ -141,6 +179,29 @@ struct DashboardView: View {
         .liquidGlassCapsule(tint: PixelTheme.accentBlue.opacity(0.14), interactive: false)
     }
 
+    private func openSearchBar(focusKeyboard: Bool) {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+            isSearchExpanded = true
+        }
+        if focusKeyboard {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                isSearchFieldFocused = true
+            }
+        }
+    }
+
+    private func toggleSearchBar() {
+        if shouldShowSearchBar {
+            dismissKeyboard()
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.86)) {
+                viewModel.globalSearchQuery = ""
+                isSearchExpanded = false
+            }
+        } else {
+            openSearchBar(focusKeyboard: true)
+        }
+    }
+
     private func dismissKeyboard() {
         isSearchFieldFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -150,56 +211,52 @@ struct DashboardView: View {
 
     private var globalSearchBarSection: some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(PixelTheme.accentBlue)
-                .font(.body.weight(.semibold))
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(PixelTheme.accentBlue)
+                    .font(.subheadline.weight(.semibold))
 
-            TextField("Buscar palabra en todas las notas...", text: $viewModel.globalSearchQuery)
-                .focused($isSearchFieldFocused)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-                .onSubmit {
-                    dismissKeyboard()
-                }
-                .font(.subheadline)
+                TextField("Buscar palabra en todas las notas...", text: $viewModel.globalSearchQuery)
+                    .focused($isSearchFieldFocused)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .onSubmit {
+                        dismissKeyboard()
+                    }
+                    .font(.subheadline)
 
-            if !viewModel.globalSearchQuery.isEmpty {
-                Button {
-                    viewModel.globalSearchQuery = ""
-                    dismissKeyboard()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                if !viewModel.globalSearchQuery.isEmpty {
+                    Button {
+                        viewModel.globalSearchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-            } else if isSearchFieldFocused {
-                Button("Listo") {
-                    dismissKeyboard()
-                }
-                .font(.caption.weight(.bold))
-                .foregroundStyle(PixelTheme.accentBlue)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .liquidGlassCapsule(
+                tint: isSearchFieldFocused || !viewModel.globalSearchQuery.isEmpty
+                    ? PixelTheme.accentBlue.opacity(0.14)
+                    : nil,
+                interactive: false
+            )
+
+            Button("Cancelar") {
+                toggleSearchBar()
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(PixelTheme.accentBlue)
+            .lineLimit(1)
+            .fixedSize()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    isSearchFieldFocused || !viewModel.globalSearchQuery.isEmpty
-                        ? PixelTheme.accentBlue.opacity(0.55)
-                        : Color.clear,
-                    lineWidth: 1.2
-                )
-        )
     }
 
     private var appleMailStyleFiltersSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             // Fila 1 (Categorías): Comportamiento colapsable estilo Apple Mail
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -209,7 +266,7 @@ struct DashboardView: View {
                         color: PixelTheme.accentBlue,
                         isSelected: viewModel.selectedTagFilter == nil && !viewModel.filterFavoritesOnly
                     ) {
-                        dismissKeyboard()
+                        if isSearchFieldFocused { dismissKeyboard() }
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
                             viewModel.selectedTagFilter = nil
                             viewModel.filterFavoritesOnly = false
@@ -222,7 +279,7 @@ struct DashboardView: View {
                         color: PixelTheme.bookmarkAmber,
                         isSelected: viewModel.filterFavoritesOnly
                     ) {
-                        dismissKeyboard()
+                        if isSearchFieldFocused { dismissKeyboard() }
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
                             viewModel.filterFavoritesOnly.toggle()
                         }
@@ -235,7 +292,7 @@ struct DashboardView: View {
                             color: activeTag.color,
                             isSelected: true
                         ) {
-                            dismissKeyboard()
+                            if isSearchFieldFocused { dismissKeyboard() }
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
                                 viewModel.selectedTagFilter = nil
                             }
@@ -243,18 +300,21 @@ struct DashboardView: View {
                     }
 
                     Button {
-                        dismissKeyboard()
+                        if isSearchFieldFocused { dismissKeyboard() }
                         showTagManagerSheet = true
                     } label: {
                         Image(systemName: "plus")
                             .font(.subheadline.weight(.bold))
-                            .frame(width: 32, height: 32)
-                            .liquidGlassCircle()
+                            .frame(width: 34, height: 34)
+                            .liquidGlassCircle(interactive: false)
                     }
                     .buttonStyle(.plain)
+                    .morphTransitionSource(id: "TAG_MANAGER_SOURCE", in: tagButtonNamespace)
                     .accessibilityLabel("Seleccionar, crear u ocultar etiquetas")
                 }
+                .padding(.vertical, 4)
             }
+            .scrollClipDisabled()
 
             // Fila 2 (Horario: Mañana / Tarde / Noche): Sin la palabra "Franja:" y colapsable estilo Apple Mail
             ScrollView(.horizontal, showsIndicators: false) {
@@ -267,14 +327,16 @@ struct DashboardView: View {
                             color: Color(hex: period.badgeColorHex),
                             isSelected: selected
                         ) {
-                            dismissKeyboard()
+                            if isSearchFieldFocused { dismissKeyboard() }
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
                                 viewModel.filterDayPeriod = selected ? nil : period
                             }
                         }
                     }
                 }
+                .padding(.vertical, 2)
             }
+            .scrollClipDisabled()
         }
     }
 

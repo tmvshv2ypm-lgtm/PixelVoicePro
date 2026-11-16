@@ -117,7 +117,10 @@ struct TagItem: Identifiable, Codable, Hashable {
         TagItem(id: "tag_entrevistas", name: "Entrevistas", colorHex: "#10B981", iconName: "mic.badge.plus"),
         TagItem(id: "tag_trabajo", name: "Trabajo", colorHex: "#F59E0B", iconName: "briefcase.fill"),
         TagItem(id: "tag_ideas", name: "Ideas", colorHex: "#EC4899", iconName: "lightbulb.fill"),
-        TagItem(id: "tag_reunion", name: "Reuniones", colorHex: "#06B6D4", iconName: "person.3.fill")
+        TagItem(id: "tag_reunion", name: "Reuniones", colorHex: "#06B6D4", iconName: "person.3.fill"),
+        TagItem(id: "tag_microbiologia", name: "Microbiología", colorHex: "#14B8A6", iconName: "microbe.fill"),
+        TagItem(id: "tag_anatomia_humana", name: "Anatomía humana", colorHex: "#F43F5E", iconName: "lungs.fill"),
+        TagItem(id: "tag_investigacion_social", name: "Investigación social", colorHex: "#F97316", iconName: "globe.americas.fill")
     ]
 }
 

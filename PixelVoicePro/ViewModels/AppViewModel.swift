@@ -428,7 +428,7 @@ final class AppViewModel: ObservableObject {
             return
         }
         var merged = TagItem.predefinedTags
-        for item in saved where !merged.contains(where: { $0.id == item.id }) {
+        for item in saved where !merged.contains(where: { $0.id == item.id || $0.name.lowercased() == item.name.lowercased() }) {
             merged.append(item)
         }
         availableTags = merged

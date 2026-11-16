@@ -144,4 +144,41 @@ extension View {
                 )
         }
     }
+
+    /// Marca el botón origen para transiciones de zoom continuas en iOS 18+.
+    @ViewBuilder
+    func morphTransitionSource<ID: Hashable>(id: ID, in namespace: Namespace.ID) -> some View {
+        if #available(iOS 18.0, *) {
+            self.matchedTransitionSource(id: id, in: namespace)
+        } else {
+            self
+        }
+    }
+
+    /// Aplica transición fluida tipo zoom desde el botón origen hacia una hoja/sheet en iOS 18+.
+    @ViewBuilder
+    func morphZoomSheetTransition<ID: Hashable>(sourceID: ID, in namespace: Namespace.ID) -> some View {
+        if #available(iOS 18.0, *) {
+            self.navigationTransition(.zoom(sourceID: sourceID, in: namespace))
+        } else {
+            self
+        }
+    }
+
+    /// Detecta el gesto nativo de arrastre hacia abajo al inicio de un `ScrollView` en iOS 18+ (estilo Notas de Voz).
+    @ViewBuilder
+    func onPullDownReveal(threshold: CGFloat = 42.0, action: @escaping () -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            self.onScrollGeometryChange(for: Bool.self) { geometry in
+                let trueOffset = geometry.contentOffset.y + geometry.contentInsets.top
+                return trueOffset < -threshold
+            } action: { _, pulledDown in
+                if pulledDown {
+                    action()
+                }
+            }
+        } else {
+            self
+        }
+    }
 }

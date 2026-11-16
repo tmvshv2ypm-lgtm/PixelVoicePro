@@ -21,67 +21,68 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 11) {
-                        // Barra discreta de progreso cuando hay post-procesamiento en segundo plano
-                        if viewModel.isBackgroundProcessingActive {
-                            backgroundProcessingBanner
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                        }
+                VStack(spacing: 0) {
+                    // 1. Buscador Global fuera del List (nunca altera el contentOffset ni congela la animación)
+                    if shouldShowSearchBar {
+                        globalSearchBarSection
+                            .padding(.horizontal, 16)
+                            .padding(.top, 4)
+                            .padding(.bottom, 8)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
 
-                        // 1. Buscador Global colapsable (aparece al tocar la lupa o deslizar hacia abajo)
-                        if shouldShowSearchBar {
-                            globalSearchBarSection
-                                .transition(.asymmetric(
-                                    insertion: .move(edge: .top).combined(with: .opacity),
-                                    removal: .opacity
-                                ))
-                        }
+                    // 2. Barra discreta de post-procesamiento en segundo plano
+                    if viewModel.isBackgroundProcessingActive {
+                        backgroundProcessingBanner
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 8)
+                            .transition(.opacity)
+                    }
 
-                        // 2. Barra minimalista de etiquetas ([Todas], [Favoritas], [+]) y franjas
-                        appleMailStyleFiltersSection
+                    // 3. Filtros rápidos ([Todas], [Favoritas], [+]) y franjas horarias
+                    appleMailStyleFiltersSection
+                        .padding(.horizontal, 16)
+                        .padding(.top, 2)
+                        .padding(.bottom, 6)
 
-                        // 3. Si hay consulta activa en el Buscador Global, mostrar tarjetas de coincidencia exacta al segundo
+                    // 4. Lista nativa iOS con Swipe Actions (Eliminar, Favorita, Etiquetas / Exportar) y pull-down seguro
+                    List {
                         if !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            globalDeepMatchesSection
+                            Section {
+                                globalDeepMatchesSection
+                            }
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
                         }
 
-                        // 4. Listado Principal Agrupado Cronológicamente con Fecha y Hora Exacta hasta el Segundo
-                        chronologicalRecordingsListSection
+                        chronologicalRecordingsListRows
+
+                        Color.clear
+                            .frame(height: 92)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 2)
-                    .padding(.bottom, 108)
-                }
-                .scrollBounceBehavior(.always, axes: .vertical)
-                .onPullDownReveal(threshold: 42.0) {
-                    if !isSearchExpanded {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        openSearchBar(focusKeyboard: true)
-                    }
-                }
-                .scrollDismissesKeyboard(.immediately)
-                .background(
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if isSearchFieldFocused {
-                                dismissKeyboard()
-                            }
-                            if isSearchExpanded && viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                                    isSearchExpanded = false
-                                }
-                            }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .environment(\.defaultMinListRowHeight, 8)
+                    .scrollBounceBehavior(.always, axes: .vertical)
+                    .scrollDismissesKeyboard(.interactively)
+                    .onSafePullDownReleaseReveal(threshold: 46.0) {
+                        if !isSearchExpanded {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            openSearchBar()
                         }
-                )
+                    }
+                }
 
                 // 5. Botón Flotante Circular Liquid Glass (estilo Apple Voice Memos)
                 floatingRecordButtonBar
             }
-            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: viewModel.isBackgroundProcessingActive)
+            .animation(.easeInOut(duration: 0.22), value: shouldShowSearchBar)
+            .animation(.easeInOut(duration: 0.25), value: viewModel.isBackgroundProcessingActive)
             .onAppear {
-                dismissKeyboard()
+                isSearchFieldFocused = false
             }
             .navigationTitle("PixelVoice Pro")
             .navigationBarTitleDisplayMode(.inline)
@@ -90,15 +91,13 @@ struct DashboardView: View {
                     Button {
                         toggleSearchBar()
                     } label: {
-                        Image(systemName: shouldShowSearchBar ? "xmark" : "magnifyingglass")
+                        Image(systemName: "magnifyingglass")
                             .font(.body.weight(.medium))
                     }
-                    .accessibilityLabel(shouldShowSearchBar ? "Cerrar búsqueda" : "Buscar notas")
+                    .accessibilityLabel("Buscar notas")
 
                     Button {
-                        if isSearchFieldFocused {
-                            dismissKeyboard()
-                        }
+                        dismissKeyboard()
                         viewModel.isShowingSettingsSheet = true
                     } label: {
                         Image(systemName: "gearshape")
@@ -179,31 +178,28 @@ struct DashboardView: View {
         .liquidGlassCapsule(tint: PixelTheme.accentBlue.opacity(0.14), interactive: false)
     }
 
-    private func openSearchBar(focusKeyboard: Bool) {
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
-            isSearchExpanded = true
-        }
-        if focusKeyboard {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                isSearchFieldFocused = true
-            }
-        }
+    private func openSearchBar() {
+        isSearchExpanded = true
+    }
+
+    private func closeSearchBar() {
+        dismissKeyboard()
+        viewModel.globalSearchQuery = ""
+        isSearchExpanded = false
     }
 
     private func toggleSearchBar() {
         if shouldShowSearchBar {
-            dismissKeyboard()
-            withAnimation(.spring(response: 0.30, dampingFraction: 0.86)) {
-                viewModel.globalSearchQuery = ""
-                isSearchExpanded = false
-            }
+            closeSearchBar()
         } else {
-            openSearchBar(focusKeyboard: true)
+            openSearchBar()
         }
     }
 
     private func dismissKeyboard() {
-        isSearchFieldFocused = false
+        if isSearchFieldFocused {
+            isSearchFieldFocused = false
+        }
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
@@ -238,15 +234,25 @@ struct DashboardView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .liquidGlassCapsule(
-                tint: isSearchFieldFocused || !viewModel.globalSearchQuery.isEmpty
-                    ? PixelTheme.accentBlue.opacity(0.14)
-                    : nil,
-                interactive: false
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(
+                        isSearchFieldFocused ? PixelTheme.accentBlue.opacity(0.45) : Color.primary.opacity(0.08),
+                        lineWidth: 1
+                    )
+            )
+            .task {
+                try? await Task.sleep(for: .milliseconds(260))
+                guard !Task.isCancelled, isSearchExpanded else { return }
+                isSearchFieldFocused = true
+            }
 
             Button("Cancelar") {
-                toggleSearchBar()
+                closeSearchBar()
             }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(PixelTheme.accentBlue)
@@ -430,65 +436,107 @@ struct DashboardView: View {
         }
     }
 
-    private var chronologicalRecordingsListSection: some View {
+    @ViewBuilder
+    private var chronologicalRecordingsListRows: some View {
         let groups = viewModel.chronologicalDayGroups
-        return VStack(alignment: .leading, spacing: 20) {
-            if groups.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "waveform.badge.mic")
-                        .font(.system(size: 44))
-                        .foregroundStyle(PixelTheme.accentBlue.opacity(0.7))
-                    Text("No hay grabaciones disponibles")
-                        .font(.headline)
-                    Text("Pulsa el botón rojo inferior para iniciar una nueva grabación.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 42)
-            } else {
-                ForEach(groups) { group in
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Image(systemName: "calendar.badge.clock")
-                                .foregroundStyle(PixelTheme.accentBlue)
-                            Text(group.headerTitle)
-                                .font(.subheadline.weight(.bold))
-                            Spacer()
-                            Text("\(group.recordings.count) nota(s)")
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.primary.opacity(0.07), in: Capsule())
-                        }
-                        .padding(.top, 4)
+        if groups.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "waveform.badge.mic")
+                    .font(.system(size: 44))
+                    .foregroundStyle(PixelTheme.accentBlue.opacity(0.7))
+                Text("No hay grabaciones disponibles")
+                    .font(.headline)
+                Text("Pulsa el botón rojo inferior para iniciar una nueva grabación.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 42)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        } else {
+            ForEach(groups) { group in
+                Section {
+                    ForEach(group.recordings) { recording in
+                        RecordingListCardView(
+                            recording: recording,
+                            onOpen: {
+                                dismissKeyboard()
+                                viewModel.openRecording(recording)
+                            },
+                            onQuickRenameAndTag: {
+                                dismissKeyboard()
+                                viewModel.recordingPendingQuickEdit = recording
+                            },
+                            onToggleFavorite: {
+                                viewModel.toggleFavorite(recording)
+                            },
+                            onExport: {
+                                dismissKeyboard()
+                                recordingToExport = recording
+                            },
+                            onDelete: {
+                                viewModel.deleteRecording(recording)
+                            }
+                        )
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                viewModel.deleteRecording(recording)
+                            } label: {
+                                Label("Eliminar", systemImage: "trash.fill")
+                            }
 
-                        ForEach(group.recordings) { recording in
-                            RecordingListCardView(
-                                recording: recording,
-                                onOpen: {
-                                    dismissKeyboard()
-                                    viewModel.openRecording(recording)
-                                },
-                                onQuickRenameAndTag: {
-                                    dismissKeyboard()
-                                    viewModel.recordingPendingQuickEdit = recording
-                                },
-                                onToggleFavorite: {
-                                    viewModel.toggleFavorite(recording)
-                                },
-                                onExport: {
-                                    dismissKeyboard()
-                                    recordingToExport = recording
-                                },
-                                onDelete: {
-                                    viewModel.deleteRecording(recording)
-                                }
-                            )
+                            Button {
+                                viewModel.toggleFavorite(recording)
+                            } label: {
+                                Label(
+                                    recording.isFavorite ? "Quitar" : "Favorita",
+                                    systemImage: recording.isFavorite ? "star.slash.fill" : "star.fill"
+                                )
+                            }
+                            .tint(PixelTheme.bookmarkAmber)
+
+                            Button {
+                                dismissKeyboard()
+                                viewModel.recordingPendingQuickEdit = recording
+                            } label: {
+                                Label("Etiquetas", systemImage: "folder.badge.plus")
+                            }
+                            .tint(PixelTheme.accentBlue)
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                            Button {
+                                dismissKeyboard()
+                                recordingToExport = recording
+                            } label: {
+                                Label("Exportar", systemImage: "square.and.arrow.up.fill")
+                            }
+                            .tint(.indigo)
                         }
                     }
+                } header: {
+                    HStack {
+                        Image(systemName: "calendar.badge.clock")
+                            .foregroundStyle(PixelTheme.accentBlue)
+                        Text(group.headerTitle)
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text("\(group.recordings.count) nota(s)")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.primary.opacity(0.07), in: Capsule())
+                            .foregroundStyle(.secondary)
+                    }
+                    .textCase(nil)
+                    .padding(.vertical, 2)
                 }
+                .listSectionSeparator(.hidden)
             }
         }
     }
@@ -534,14 +582,11 @@ private struct RecordingListCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             // Fila 1: Título Secuencial Limpio (ej. "Grabación 1") + Botones de Acción
             HStack(alignment: .top, spacing: 8) {
-                Button(action: onOpen) {
-                    Text(recording.title)
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(2)
-                }
-                .buttonStyle(.plain)
+                Text(recording.title)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
 
                 Spacer()
 
@@ -552,7 +597,7 @@ private struct RecordingListCardView: View {
                         .padding(6)
                         .background(PixelTheme.accentBlue.opacity(0.12), in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .accessibilityLabel("Renombrar y etiquetar nota")
 
                 Button(action: onToggleFavorite) {
@@ -561,7 +606,7 @@ private struct RecordingListCardView: View {
                         .foregroundStyle(recording.isFavorite ? PixelTheme.bookmarkAmber : .secondary)
                         .padding(6)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
 
                 Menu {
                     Button {
@@ -635,24 +680,21 @@ private struct RecordingListCardView: View {
             }
 
             // Fila 4: Mini Onda de Audio + Extracto de Transcripción
-            Button(action: onOpen) {
-                VStack(alignment: .leading, spacing: 8) {
-                    CompactCardWaveformPreview(
-                        samples: recording.waveformSamples,
-                        events: recording.acousticEvents,
-                        duration: recording.duration
-                    )
+            VStack(alignment: .leading, spacing: 8) {
+                CompactCardWaveformPreview(
+                    samples: recording.waveformSamples,
+                    events: recording.acousticEvents,
+                    duration: recording.duration
+                )
 
-                    if !recording.fullTranscriptText.isEmpty {
-                        Text(recording.fullTranscriptText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
+                if !recording.fullTranscriptText.isEmpty {
+                    Text(recording.fullTranscriptText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
             }
-            .buttonStyle(.plain)
 
             // Fila 5: Chips de Etiquetas de Color, Locutores y Eventos Acústicos
             ScrollView(.horizontal, showsIndicators: false) {
@@ -704,6 +746,10 @@ private struct RecordingListCardView: View {
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 3)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onOpen()
+        }
     }
 }
 

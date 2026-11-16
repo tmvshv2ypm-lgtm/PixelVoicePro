@@ -165,16 +165,19 @@ extension View {
         }
     }
 
-    /// Detecta el gesto nativo de arrastre hacia abajo al inicio de un `ScrollView` en iOS 18+ (estilo Notas de Voz).
+    /// Detecta el gesto de deslizar hacia abajo al soltar el dedo al inicio de un `List`/`ScrollView` en iOS 18+,
+    /// permitiendo que el rebote elástico vuelva a `0` suavemente sin quedar pegado ni congelar la barra superior.
     @ViewBuilder
-    func onPullDownReveal(threshold: CGFloat = 42.0, action: @escaping () -> Void) -> some View {
+    func onSafePullDownReleaseReveal(threshold: CGFloat = 48.0, action: @escaping () -> Void) -> some View {
         if #available(iOS 18.0, *) {
-            self.onScrollGeometryChange(for: Bool.self) { geometry in
-                let trueOffset = geometry.contentOffset.y + geometry.contentInsets.top
-                return trueOffset < -threshold
-            } action: { _, pulledDown in
-                if pulledDown {
-                    action()
+            self.onScrollPhaseChange { oldPhase, newPhase, context in
+                if oldPhase == .interacting && newPhase != .interacting {
+                    let pullDistance = -(context.geometry.contentOffset.y + context.geometry.contentInsets.top)
+                    if pullDistance > threshold {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                            action()
+                        }
+                    }
                 }
             }
         } else {

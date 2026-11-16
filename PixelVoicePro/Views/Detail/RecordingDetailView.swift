@@ -238,14 +238,15 @@ struct RecordingDetailView: View {
                 Button {
                     isShowingQuickEditSheet = true
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(recording.title)
-                            .font(.title3.weight(.bold))
+                            .font(.largeTitle.weight(.bold))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                             .lineLimit(2)
+                            .minimumScaleFactor(0.72)
                         Image(systemName: "pencil.circle.fill")
-                            .font(.subheadline)
+                            .font(.title3)
                             .foregroundStyle(PixelTheme.accentBlue)
                     }
                 }

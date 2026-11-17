@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>es</string>
 	<key>CFBundleDisplayName</key>
-	<string>PixelVoice Pro</string>
+	<string>Voice Notes</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,9 +25,9 @@
 	<key>MinimumOSVersion</key>
 	<string>17.0</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>PixelVoice Pro necesita acceso al micrófono para grabar tus notas de voz en alta fidelidad, analizar eventos acústicos en vivo y continuar grabando en segundo plano.</string>
+	<string>Voice Notes necesita acceso al micrófono para grabar tus notas de voz en alta fidelidad, analizar eventos acústicos en vivo y continuar grabando en segundo plano.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>PixelVoice Pro utiliza el reconocimiento de voz avanzado para transcribir tus grabaciones en tiempo real en español, sincronizar cada palabra con el audio y separar a los locutores.</string>
+	<string>Voice Notes utiliza el reconocimiento de voz avanzado para transcribir tus grabaciones en tiempo real en español, sincronizar cada palabra con el audio y separar a los locutores.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>

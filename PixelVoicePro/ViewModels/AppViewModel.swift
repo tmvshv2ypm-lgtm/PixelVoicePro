@@ -19,6 +19,50 @@ struct RecordingNavigationTarget: Identifiable, Hashable {
     let highlightKeyword: String?
 }
 
+/// Destino de navegación para abrir una carpeta cuadrada Liquid Glass en el Home de Voice Notes.
+enum FolderDestination: Identifiable, Hashable {
+    case all
+    case favorites
+    case tag(TagItem)
+
+    var id: String {
+        switch self {
+        case .all: return "folder_all"
+        case .favorites: return "folder_favorites"
+        case .tag(let tag): return "folder_tag_\(tag.id)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .all: return "Todas"
+        case .favorites: return "Favoritas"
+        case .tag(let tag): return tag.name
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .all: return "tray.full.fill"
+        case .favorites: return "star.fill"
+        case .tag(let tag): return tag.iconName
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .all: return PixelTheme.accentBlue
+        case .favorites: return PixelTheme.bookmarkAmber
+        case .tag(let tag): return tag.color
+        }
+    }
+
+    var associatedTag: TagItem? {
+        if case .tag(let tag) = self { return tag }
+        return nil
+    }
+}
+
 @MainActor
 final class AppViewModel: ObservableObject {
     @Published var recordings: [VoiceRecording] = []
@@ -30,8 +74,9 @@ final class AppViewModel: ObservableObject {
     @Published var availableTags: [TagItem] = TagItem.predefinedTags
     @Published var hiddenDefaultTagIDs: Set<String> = []
     @Published var isShowingRecordingBooth: Bool = false
+    @Published var pendingRecordingInitialTags: [TagItem] = []
     @Published var isShowingSettingsSheet: Bool = false
-    @Published var activeNavigationTarget: RecordingNavigationTarget?
+    @Published var navigationPath = NavigationPath()
 
     /// Modal de renombrado y etiquetado rápido (en listado o recién terminada una grabación)
     @Published var recordingPendingQuickEdit: VoiceRecording?
@@ -373,28 +418,99 @@ final class AppViewModel: ObservableObject {
         return groups.sorted { $0.date > $1.date }
     }
 
-    /// Coincidencias profundas en vivo para el Buscador Global (mostrando en qué nota y en qué minuto/segundo exacto se dijo la palabra).
+    /// Devuelve el listado filtrado y agrupado por día para una carpeta específica del Home de Voice Notes.
+    func chronologicalDayGroups(for folder: FolderDestination, dayPeriod: DayPeriod? = nil) -> [ChronologicalDayGroup] {
+        let filtered = recordings.filter { rec in
+            switch folder {
+            case .all:
+                break
+            case .favorites:
+                guard rec.isFavorite else { return false }
+            case .tag(let tag):
+                guard rec.tags.contains(where: { $0.id == tag.id }) else { return false }
+            }
+            if let period = dayPeriod, rec.dayPeriod != period {
+                return false
+            }
+            return true
+        }
+        .sorted { $0.createdAt > $1.createdAt }
+
+        var groupedDict: [String: [VoiceRecording]] = [:]
+        for rec in filtered {
+            let key = ExactDateFormatter.exactDayKey(from: rec.createdAt)
+            groupedDict[key, default: []].append(rec)
+        }
+
+        let groups: [ChronologicalDayGroup] = groupedDict.compactMap { key, items in
+            let sortedItems = items.sorted { $0.createdAt > $1.createdAt }
+            guard let newestDate = sortedItems.first?.createdAt else { return nil }
+            let header = ExactDateFormatter.chronologicalGroupHeader(from: newestDate)
+            return ChronologicalDayGroup(
+                id: key,
+                headerTitle: header,
+                date: newestDate,
+                recordings: sortedItems
+            )
+        }
+        return groups.sorted { $0.date > $1.date }
+    }
+
+    func recordingCount(for folder: FolderDestination) -> Int {
+        switch folder {
+        case .all:
+            return recordings.count
+        case .favorites:
+            return recordings.filter(\.isFavorite).count
+        case .tag(let tag):
+            return recordings.filter { rec in rec.tags.contains(where: { $0.id == tag.id }) }.count
+        }
+    }
+
+    /// Coincidencias profundas en vivo para el Buscador Global sobre todas las notas.
     var globalDeepSearchMatches: [GlobalSearchMatch] {
         let trimmed = globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        return filteredRecordings.flatMap { $0.evaluateGlobalSearchMatches(query: trimmed) }
+        return recordings
+            .sorted { $0.createdAt > $1.createdAt }
+            .flatMap { $0.evaluateGlobalSearchMatches(query: trimmed) }
+    }
+
+    /// Tarjetas de notas que coinciden con el texto global de búsqueda.
+    var globalSearchMatchingRecordings: [VoiceRecording] {
+        let trimmed = globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        return recordings
+            .filter { !$0.evaluateGlobalSearchMatches(query: trimmed).isEmpty }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func openFolder(_ folder: FolderDestination) {
+        navigationPath.append(folder)
+    }
+
+    func startRecordingSession(initialTags: [TagItem] = []) {
+        pendingRecordingInitialTags = initialTags
+        isShowingRecordingBooth = true
     }
 
     /// Abre una grabación directamente en el segundo exacto seleccionado desde un resultado del Buscador Global.
     func openRecordingFromSearchMatch(_ match: GlobalSearchMatch) {
-        activeNavigationTarget = RecordingNavigationTarget(
+        let target = RecordingNavigationTarget(
             recordingId: match.recordingId,
             initialSeekTimestamp: match.timestamp,
             highlightKeyword: globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         )
+        navigationPath.append(target)
     }
 
     func openRecording(_ recording: VoiceRecording) {
-        activeNavigationTarget = RecordingNavigationTarget(
+        let target = RecordingNavigationTarget(
             recordingId: recording.id,
             initialSeekTimestamp: nil,
             highlightKeyword: nil
         )
+        navigationPath.append(target)
     }
 
     func recording(for id: UUID) -> VoiceRecording? {

@@ -27,9 +27,9 @@ struct TagManagerSheet: View {
                         defaultTagRow(tag)
                     }
                 } header: {
-                    Text("Etiquetas Predeterminadas")
+                    Text("Carpetas Predeterminadas")
                 } footer: {
-                    Text("Las etiquetas predeterminadas se pueden ocultar de la barra rápida, pero no se eliminan.")
+                    Text("Las carpetas predeterminadas se pueden ocultar de la pantalla principal con el ícono del ojo, pero no se eliminan.")
                 }
 
                 // 2. Etiquetas personalizadas creadas por el usuario (sí se pueden eliminar)
@@ -79,7 +79,7 @@ struct TagManagerSheet: View {
                     .disabled(newTagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .navigationTitle("Etiquetas")
+            .navigationTitle("Carpetas y Etiquetas")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -203,7 +203,7 @@ struct TagManagerSheet: View {
     private func isTagSelected(_ tag: TagItem) -> Bool {
         switch mode {
         case .filterLibrary:
-            return viewModel.selectedTagFilter?.id == tag.id
+            return false
         case .assignToRecording(let selectedTags):
             return selectedTags.wrappedValue.contains(where: { $0.id == tag.id })
         }
@@ -212,13 +212,13 @@ struct TagManagerSheet: View {
     private func handleTagSelection(_ tag: TagItem) {
         switch mode {
         case .filterLibrary:
-            if viewModel.selectedTagFilter?.id == tag.id {
-                viewModel.selectedTagFilter = nil
-            } else {
-                viewModel.filterFavoritesOnly = false
-                viewModel.selectedTagFilter = tag
+            if viewModel.isTagHidden(tag) {
+                viewModel.toggleDefaultTagVisibility(tag)
             }
             dismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                viewModel.openFolder(.tag(tag))
+            }
 
         case .assignToRecording(let selectedTags):
             if let idx = selectedTags.wrappedValue.firstIndex(where: { $0.id == tag.id }) {
@@ -239,10 +239,6 @@ struct TagManagerSheet: View {
             if !selectedTags.wrappedValue.contains(where: { $0.id == created.id }) {
                 selectedTags.wrappedValue.append(created)
             }
-        } else {
-            viewModel.filterFavoritesOnly = false
-            viewModel.selectedTagFilter = created
-            dismiss()
         }
     }
 

@@ -29,6 +29,7 @@
 		A10000192700000000000001 /* ExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000192700000000000001 /* ExportOptionsSheet.swift */; };
 		A10000202700000000000001 /* RecordingSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000202700000000000001 /* RecordingSettingsSheet.swift */; };
 		A10000212700000000000001 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000212700000000000001 /* DashboardView.swift */; };
+		A10000292700000000000001 /* FolderRecordingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000292700000000000001 /* FolderRecordingsView.swift */; };
 		A10000222700000000000001 /* RecordingBoothView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000222700000000000001 /* RecordingBoothView.swift */; };
 		A10000232700000000000001 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000232700000000000001 /* RecordingDetailView.swift */; };
 		A10000242700000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000262700000000000001 /* Assets.xcassets */; };
@@ -59,6 +60,7 @@
 		A20000192700000000000001 /* ExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/ExportOptionsSheet.swift; sourceTree = "<group>"; };
 		A20000202700000000000001 /* RecordingSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Settings/RecordingSettingsSheet.swift; sourceTree = "<group>"; };
 		A20000212700000000000001 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Dashboard/DashboardView.swift; sourceTree = "<group>"; };
+		A20000292700000000000001 /* FolderRecordingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Dashboard/FolderRecordingsView.swift; sourceTree = "<group>"; };
 		A20000222700000000000001 /* RecordingBoothView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Recording/RecordingBoothView.swift; sourceTree = "<group>"; };
 		A20000232700000000000001 /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Detail/RecordingDetailView.swift; sourceTree = "<group>"; };
 		A20000242700000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PixelVoicePro/Resources/Info.plist; sourceTree = "<group>"; };
@@ -94,6 +96,7 @@
 				A20000192700000000000001 /* ExportOptionsSheet.swift */,
 				A20000202700000000000001 /* RecordingSettingsSheet.swift */,
 				A20000212700000000000001 /* DashboardView.swift */,
+				A20000292700000000000001 /* FolderRecordingsView.swift */,
 				A20000222700000000000001 /* RecordingBoothView.swift */,
 				A20000232700000000000001 /* RecordingDetailView.swift */,
 				A20000242700000000000001 /* Info.plist */,
@@ -198,6 +201,7 @@
 				A10000192700000000000001 /* ExportOptionsSheet.swift in Sources */,
 				A10000202700000000000001 /* RecordingSettingsSheet.swift in Sources */,
 				A10000212700000000000001 /* DashboardView.swift in Sources */,
+				A10000292700000000000001 /* FolderRecordingsView.swift in Sources */,
 				A10000222700000000000001 /* RecordingBoothView.swift in Sources */,
 				A10000232700000000000001 /* RecordingDetailView.swift in Sources */,
 			);

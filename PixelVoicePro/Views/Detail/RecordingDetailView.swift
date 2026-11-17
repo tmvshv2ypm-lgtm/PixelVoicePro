@@ -98,6 +98,7 @@ struct RecordingDetailView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .toolbar(.visible, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {

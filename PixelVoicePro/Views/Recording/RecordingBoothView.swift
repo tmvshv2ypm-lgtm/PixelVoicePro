@@ -86,6 +86,10 @@ struct RecordingBoothView: View {
                 }
             }
             .task {
+                if selectedDraftTags.isEmpty && !viewModel.pendingRecordingInitialTags.isEmpty {
+                    selectedDraftTags = viewModel.pendingRecordingInitialTags
+                    viewModel.pendingRecordingInitialTags = []
+                }
                 await beginRecordingAutomatically()
             }
         }

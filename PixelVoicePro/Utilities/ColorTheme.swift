@@ -145,6 +145,47 @@ extension View {
         }
     }
 
+    /// Aplica efecto Liquid Glass en tarjetas/carpetas cuadradas con bordes redondeados suaves.
+    @ViewBuilder
+    func liquidGlassRoundedRect(cornerRadius: CGFloat = 24, tint: Color? = nil, interactive: Bool = true) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if #available(iOS 26.0, *) {
+            if let tint {
+                if interactive {
+                    self.glassEffect(.regular.tint(tint).interactive(), in: shape)
+                } else {
+                    self.glassEffect(.regular.tint(tint), in: shape)
+                }
+            } else {
+                if interactive {
+                    self.glassEffect(.regular.interactive(), in: shape)
+                } else {
+                    self.glassEffect(.regular, in: shape)
+                }
+            }
+        } else {
+            self
+                .background(
+                    ZStack {
+                        shape.fill(.ultraThinMaterial)
+                        if let tint {
+                            shape.fill(tint.opacity(0.25))
+                        }
+                    }
+                )
+                .overlay(
+                    shape.strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.32), Color.white.opacity(0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.9
+                    )
+                )
+        }
+    }
+
     /// Marca el botón origen para transiciones de zoom continuas en iOS 18+.
     @ViewBuilder
     func morphTransitionSource<ID: Hashable>(id: ID, in namespace: Namespace.ID) -> some View {

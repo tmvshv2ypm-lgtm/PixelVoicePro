@@ -1,15 +1,18 @@
 import SwiftUI
 import UIKit
 
-/// Vista 1 (Dashboard / Lista Principal):
-/// Diseño limpio estilo Apple Mail con filtros colapsables por ícono, buscador global sin bloqueo de teclado,
-/// tarjetas minimalistas con fecha y hora exacta al segundo (`DD/MM/YYYY - HH:MM:SS AM/PM`) y botón limpio "Nueva Grabación".
+/// Vista 1 (Home de Carpetas Liquid Glass — Voice Notes):
+/// Título grande alineado a la izquierda, cuadrícula de carpetas cuadradas translúcidas con Liquid Glass,
+/// gestor de carpetas mediante el botón `+` (para crear, mostrar u ocultar categorías con el ojito)
+/// y expansión fluida en la barra superior Liquid Glass para búsqueda global.
 struct DashboardView: View {
     @ObservedObject var viewModel: AppViewModel
     @ObservedObject var recorderService: AudioRecorderService
 
     @FocusState private var isSearchFieldFocused: Bool
     @Namespace private var tagButtonNamespace
+    @Namespace private var topGlassNamespace
+
     @State private var isSearchExpanded: Bool = false
     @State private var recordingToExport: VoiceRecording?
     @State private var showTagManagerSheet: Bool = false
@@ -18,52 +21,45 @@ struct DashboardView: View {
         isSearchExpanded || !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private let folderColumns: [GridItem] = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
+    ]
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $viewModel.navigationPath) {
             ZStack(alignment: .bottom) {
-                // 1. List como raíz para que el título grande nativo ("PixelVoice Pro") y Swipe Actions funcionen al 100%
-                List {
-                    if viewModel.isBackgroundProcessingActive {
-                        backgroundProcessingBanner
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 6, trailing: 16))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                    }
+                // Fondo ambiental sutil para dar refracción y profundidad real a las carpetas Liquid Glass
+                ambientGlassBackdrop
 
-                    appleMailStyleFiltersSection
-                        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 6, trailing: 16))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Título Grande nativo alineado a la izquierda ("Voice Notes")
+                        Text("Voice Notes")
+                            .font(.largeTitle.weight(.bold))
+                            .foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 2)
 
-                    if !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Section {
-                            globalDeepMatchesSection
+                        // Barra discreta de post-procesamiento en segundo plano
+                        if viewModel.isBackgroundProcessingActive {
+                            backgroundProcessingBanner
+                                .transition(.opacity)
                         }
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+
+                        // Resultados de búsqueda global o cuadrícula de carpetas Liquid Glass
+                        if !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            globalDeepSearchResultsView
+                        } else {
+                            liquidGlassFoldersGridSection
+                        }
                     }
-
-                    chronologicalRecordingsListRows
-
-                    Color.clear
-                        .frame(height: 92)
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 112)
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .environment(\.defaultMinListRowHeight, 8)
-                .scrollBounceBehavior(.always, axes: .vertical)
                 .scrollDismissesKeyboard(.interactively)
-                .onSafePullDownReleaseReveal(threshold: 46.0) {
-                    if !isSearchExpanded {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        openSearchBar()
-                    }
-                }
 
-                // Tocar fuera de la barra cuando está desplegada y sin texto la cierra automáticamente
+                // Tocar cualquier zona fuera de la barra expandida la cierra automáticamente
                 if shouldShowSearchBar && viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Color.black.opacity(0.001)
                         .ignoresSafeArea()
@@ -71,52 +67,38 @@ struct DashboardView: View {
                         .onTapGesture {
                             closeSearchBar()
                         }
-                        .zIndex(5)
+                        .zIndex(4)
                 }
 
-                // Botón Flotante Circular Liquid Glass (estilo Apple Voice Memos)
-                floatingRecordButtonBar
-                    .zIndex(2)
+                // Botón flotante circular Liquid Glass para grabar desde el Home
+                FloatingRecordButtonBar {
+                    dismissKeyboard()
+                    viewModel.startRecordingSession()
+                }
+                .zIndex(2)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
-                if shouldShowSearchBar {
-                    globalSearchBarSection
-                        .padding(.horizontal, 16)
-                        .padding(.top, 4)
-                        .padding(.bottom, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
+                morphingTopGlassBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                    .padding(.bottom, 6)
             }
-            .animation(.spring(response: 0.30, dampingFraction: 0.86), value: shouldShowSearchBar)
             .animation(.easeInOut(duration: 0.25), value: viewModel.isBackgroundProcessingActive)
             .onAppear {
                 isSearchFieldFocused = false
             }
-            .navigationTitle("PixelVoice Pro")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        toggleSearchBar()
-                    } label: {
-                        Image(systemName: shouldShowSearchBar ? "xmark" : "magnifyingglass")
-                            .font(.body.weight(.medium))
+            .navigationTitle("Voice Notes")
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: FolderDestination.self) { folder in
+                FolderRecordingsView(
+                    viewModel: viewModel,
+                    folder: folder,
+                    onExport: { rec in
+                        recordingToExport = rec
                     }
-                    .accessibilityLabel(shouldShowSearchBar ? "Cerrar búsqueda" : "Buscar notas")
-
-                    if !shouldShowSearchBar {
-                        Button {
-                            dismissKeyboard()
-                            viewModel.isShowingSettingsSheet = true
-                        } label: {
-                            Image(systemName: "gearshape")
-                                .font(.body.weight(.medium))
-                        }
-                        .accessibilityLabel("Ajustes")
-                    }
-                }
+                )
             }
-            .navigationDestination(item: $viewModel.activeNavigationTarget) { target in
+            .navigationDestination(for: RecordingNavigationTarget.self) { target in
                 if let recording = viewModel.recording(for: target.recordingId) {
                     RecordingDetailView(
                         viewModel: viewModel,
@@ -126,7 +108,7 @@ struct DashboardView: View {
                     )
                 }
             }
-            .onChange(of: viewModel.activeNavigationTarget) { _, _ in
+            .onChange(of: viewModel.navigationPath.count) { _, _ in
                 dismissKeyboard()
             }
             .fullScreenCover(isPresented: $viewModel.isShowingRecordingBooth) {
@@ -154,55 +136,175 @@ struct DashboardView: View {
         }
     }
 
-    private var backgroundProcessingBanner: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .scaleEffect(0.75)
-                    .tint(PixelTheme.accentBlue)
+    // MARK: - Fondo Ambiental Sutil
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Procesando \(viewModel.backgroundProcessingTitle)")
-                        .font(.caption.weight(.bold))
-                        .lineLimit(1)
-                    if !viewModel.backgroundProcessingStatus.isEmpty {
-                        Text(viewModel.backgroundProcessingStatus)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+    private var ambientGlassBackdrop: some View {
+        ZStack {
+            Color(uiColor: .systemGroupedBackground)
+                .ignoresSafeArea()
+
+            Circle()
+                .fill(PixelTheme.accentBlue.opacity(0.09))
+                .frame(width: 320, height: 320)
+                .blur(radius: 70)
+                .offset(x: -110, y: -220)
+
+            Circle()
+                .fill(PixelTheme.accentCyan.opacity(0.07))
+                .frame(width: 280, height: 280)
+                .blur(radius: 70)
+                .offset(x: 130, y: 140)
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - Barra Superior con Expansión Liquid Glass de Lupa a Buscador
+
+    @ViewBuilder
+    private var morphingTopGlassBar: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: 10) {
+                HStack(spacing: 10) {
+                    if !shouldShowSearchBar {
+                        Spacer(minLength: 0)
+                    }
+
+                    // Contenedor Liquid Glass de búsqueda que se alarga arriba al tocar la lupa
+                    HStack(spacing: 8) {
+                        Button {
+                            if !shouldShowSearchBar {
+                                openSearchBar()
+                            }
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(shouldShowSearchBar ? PixelTheme.accentBlue : .primary)
+                                .frame(width: shouldShowSearchBar ? 28 : 42, height: 42)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Buscar en Voice Notes")
+
+                        if shouldShowSearchBar {
+                            TextField("Buscar en Voice Notes...", text: $viewModel.globalSearchQuery)
+                                .focused($isSearchFieldFocused)
+                                .textFieldStyle(.plain)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .submitLabel(.search)
+                                .onSubmit {
+                                    dismissKeyboard()
+                                }
+                                .font(.subheadline)
+                                .transition(.opacity)
+
+                            Button {
+                                closeSearchBar()
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 30, height: 30)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Cerrar búsqueda")
+                            .transition(.scale.combined(with: .opacity))
+                        }
+                    }
+                    .padding(.horizontal, shouldShowSearchBar ? 12 : 0)
+                    .frame(maxWidth: shouldShowSearchBar ? .infinity : 42, minHeight: 42, maxHeight: 44)
+                    .glassEffect(
+                        shouldShowSearchBar ? .regular : .regular.interactive(),
+                        in: .capsule
+                    )
+                    .glassEffectID("TOP_SEARCH_PILL", in: topGlassNamespace)
+
+                    // Engranaje de Ajustes: se oculta temporalmente mientras la búsqueda está expandida
+                    if !shouldShowSearchBar {
+                        Button {
+                            dismissKeyboard()
+                            viewModel.isShowingSettingsSheet = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.body.weight(.semibold))
+                                .frame(width: 42, height: 42)
+                        }
+                        .buttonStyle(.plain)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                        .glassEffectID("TOP_SETTINGS_GEAR", in: topGlassNamespace)
+                        .transition(.scale(scale: 0.7).combined(with: .opacity))
+                        .accessibilityLabel("Ajustes")
                     }
                 }
-
-                Spacer(minLength: 6)
-
-                Text("\(Int(viewModel.backgroundProcessingProgress * 100))%")
-                    .font(.system(.caption2, design: .monospaced).weight(.bold))
-                    .foregroundStyle(PixelTheme.accentBlue)
             }
+        } else {
+            HStack(spacing: 10) {
+                if !shouldShowSearchBar {
+                    Spacer(minLength: 0)
+                }
 
-            ProgressView(value: viewModel.backgroundProcessingProgress, total: 1.0)
-                .tint(PixelTheme.accentBlue)
+                HStack(spacing: 8) {
+                    Button {
+                        if !shouldShowSearchBar {
+                            openSearchBar()
+                        }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(shouldShowSearchBar ? PixelTheme.accentBlue : .primary)
+                            .frame(width: shouldShowSearchBar ? 28 : 42, height: 42)
+                    }
+                    .buttonStyle(.plain)
+
+                    if shouldShowSearchBar {
+                        TextField("Buscar en Voice Notes...", text: $viewModel.globalSearchQuery)
+                            .focused($isSearchFieldFocused)
+                            .textFieldStyle(.plain)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.search)
+                            .font(.subheadline)
+
+                        Button {
+                            closeSearchBar()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, shouldShowSearchBar ? 12 : 0)
+                .frame(maxWidth: shouldShowSearchBar ? .infinity : 42, minHeight: 42, maxHeight: 44)
+                .liquidGlassCapsule(interactive: false)
+
+                if !shouldShowSearchBar {
+                    Button {
+                        dismissKeyboard()
+                        viewModel.isShowingSettingsSheet = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 42, height: 42)
+                            .liquidGlassCircle()
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-        .liquidGlassCapsule(tint: PixelTheme.accentBlue.opacity(0.14), interactive: false)
     }
 
     private func openSearchBar() {
-        isSearchExpanded = true
+        withAnimation(.snappy(duration: 0.34)) {
+            isSearchExpanded = true
+        }
     }
 
     private func closeSearchBar() {
         dismissKeyboard()
-        viewModel.globalSearchQuery = ""
-        isSearchExpanded = false
-    }
-
-    private func toggleSearchBar() {
-        if shouldShowSearchBar {
-            closeSearchBar()
-        } else {
-            openSearchBar()
+        withAnimation(.snappy(duration: 0.32)) {
+            viewModel.globalSearchQuery = ""
+            isSearchExpanded = false
         }
     }
 
@@ -213,177 +315,105 @@ struct DashboardView: View {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
-    // MARK: - Subvistas del Dashboard
+    // MARK: - Cuadrícula de Carpetas Cuadradas Liquid Glass
 
-    private var globalSearchBarSection: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(PixelTheme.accentBlue)
-                    .font(.subheadline.weight(.semibold))
+    private var liquidGlassFoldersGridSection: some View {
+        LazyVGrid(columns: folderColumns, spacing: 14) {
+            FolderLiquidGlassCard(
+                title: FolderDestination.all.title,
+                iconName: FolderDestination.all.iconName,
+                color: FolderDestination.all.color,
+                count: viewModel.recordingCount(for: .all)
+            ) {
+                viewModel.openFolder(.all)
+            }
 
-                TextField("Buscar palabra en todas las notas...", text: $viewModel.globalSearchQuery)
-                    .focused($isSearchFieldFocused)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.search)
-                    .onSubmit {
-                        dismissKeyboard()
-                    }
-                    .font(.subheadline)
+            FolderLiquidGlassCard(
+                title: FolderDestination.favorites.title,
+                iconName: FolderDestination.favorites.iconName,
+                color: FolderDestination.favorites.color,
+                count: viewModel.recordingCount(for: .favorites)
+            ) {
+                viewModel.openFolder(.favorites)
+            }
 
-                if !viewModel.globalSearchQuery.isEmpty {
-                    Button {
-                        viewModel.globalSearchQuery = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
+            ForEach(viewModel.visibleAvailableTags) { tag in
+                let destination = FolderDestination.tag(tag)
+                FolderLiquidGlassCard(
+                    title: tag.name,
+                    iconName: tag.iconName,
+                    color: tag.color,
+                    count: viewModel.recordingCount(for: destination)
+                ) {
+                    viewModel.openFolder(destination)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                Color.clear
-                    .liquidGlassCapsule(
-                        tint: isSearchFieldFocused ? PixelTheme.accentBlue.opacity(0.14) : nil,
-                        interactive: false
-                    )
-            )
-            .task {
-                try? await Task.sleep(for: .milliseconds(260))
-                guard !Task.isCancelled, isSearchExpanded else { return }
-                isSearchFieldFocused = true
-            }
 
-            Button("Cancelar") {
-                closeSearchBar()
-            }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(PixelTheme.accentBlue)
-            .lineLimit(1)
-            .fixedSize()
-        }
-    }
-
-    private var appleMailStyleFiltersSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Fila 1 (Categorías): Comportamiento colapsable estilo Apple Mail
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    AppleMailFilterPill(
-                        title: "Todas",
-                        icon: "tray.full.fill",
-                        color: PixelTheme.accentBlue,
-                        isSelected: viewModel.selectedTagFilter == nil && !viewModel.filterFavoritesOnly
-                    ) {
-                        if isSearchFieldFocused { dismissKeyboard() }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
-                            viewModel.selectedTagFilter = nil
-                            viewModel.filterFavoritesOnly = false
-                        }
-                    }
-
-                    AppleMailFilterPill(
-                        title: "Favoritas",
-                        icon: "star.fill",
-                        color: PixelTheme.bookmarkAmber,
-                        isSelected: viewModel.filterFavoritesOnly
-                    ) {
-                        if isSearchFieldFocused { dismissKeyboard() }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
-                            viewModel.filterFavoritesOnly.toggle()
-                        }
-                    }
-
-                    if let activeTag = viewModel.selectedTagFilter {
-                        AppleMailFilterPill(
-                            title: activeTag.name,
-                            icon: activeTag.iconName,
-                            color: activeTag.color,
-                            isSelected: true
-                        ) {
-                            if isSearchFieldFocused { dismissKeyboard() }
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
-                                viewModel.selectedTagFilter = nil
-                            }
-                        }
-                    }
-
-                    Button {
-                        if isSearchFieldFocused { dismissKeyboard() }
-                        showTagManagerSheet = true
-                    } label: {
+            // Botón "+" integrado limpiamente en la cuadrícula para abrir el gestor de carpetas/ojitos
+            Button {
+                showTagManagerSheet = true
+            } label: {
+                VStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(PixelTheme.accentBlue.opacity(0.14))
+                            .frame(width: 52, height: 52)
                         Image(systemName: "plus")
-                            .font(.subheadline.weight(.bold))
-                            .frame(width: 34, height: 34)
-                            .liquidGlassCircle(interactive: false)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(PixelTheme.accentBlue)
                     }
-                    .buttonStyle(.borderless)
-                    .morphTransitionSource(id: "TAG_MANAGER_SOURCE", in: tagButtonNamespace)
-                    .accessibilityLabel("Seleccionar, crear u ocultar etiquetas")
-                }
-                .padding(.vertical, 4)
-            }
-            .scrollClipDisabled()
 
-            // Fila 2 (Horario: Mañana / Tarde / Noche): Sin la palabra "Franja:" y colapsable estilo Apple Mail
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(DayPeriod.allCases) { period in
-                        let selected = viewModel.filterDayPeriod == period
-                        AppleMailFilterPill(
-                            title: period.rawValue,
-                            icon: period.iconName,
-                            color: Color(hex: period.badgeColorHex),
-                            isSelected: selected
-                        ) {
-                            if isSearchFieldFocused { dismissKeyboard() }
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
-                                viewModel.filterDayPeriod = selected ? nil : period
-                            }
-                        }
-                    }
+                    Text("Carpetas")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+
+                    Text("Crear u ocultar")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.vertical, 2)
+                .padding(16)
+                .frame(maxWidth: .infinity, minHeight: 148)
+                .aspectRatio(1.02, contentMode: .fit)
+                .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .liquidGlassRoundedRect(cornerRadius: 24, tint: PixelTheme.accentBlue.opacity(0.08), interactive: false)
             }
-            .scrollClipDisabled()
+            .buttonStyle(.plain)
+            .morphTransitionSource(id: "TAG_MANAGER_SOURCE", in: tagButtonNamespace)
+            .accessibilityLabel("Gestionar, crear u ocultar carpetas")
         }
     }
 
-    private var globalDeepMatchesSection: some View {
+    // MARK: - Resultados de Búsqueda Global
+
+    private var globalDeepSearchResultsView: some View {
         let matches = viewModel.globalDeepSearchMatches
-        return VStack(alignment: .leading, spacing: 10) {
+        let matchingRecordings = viewModel.globalSearchMatchingRecordings
+
+        return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label(
-                    "Coincidencias Exactas (\(matches.count))",
-                    systemImage: "text.magnifyingglass"
-                )
-                .font(.caption.weight(.bold))
-                .foregroundStyle(PixelTheme.accentBlue)
-
+                Label("Coincidencias Exactas (\(matches.count))", systemImage: "text.magnifyingglass")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(PixelTheme.accentBlue)
                 Spacer()
-
-                Text("Toca para saltar al segundo exacto")
+                Text("Toca para saltar al segundo")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
             if matches.isEmpty {
-                HStack {
+                HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass.circle")
                         .font(.title3)
                         .foregroundStyle(.secondary)
                     Text("No se encontró \"\(viewModel.globalSearchQuery)\" en ninguna grabación.")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                .padding(12)
+                .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+                .liquidGlassRoundedRect(cornerRadius: 16, interactive: false)
             } else {
-                ForEach(matches.prefix(12)) { match in
+                ForEach(matches.prefix(10)) { match in
                     Button {
                         dismissKeyboard()
                         viewModel.openRecordingFromSearchMatch(match)
@@ -433,127 +463,145 @@ struct DashboardView: View {
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(PixelTheme.accentBlue.opacity(0.35), lineWidth: 1)
+                                .strokeBorder(PixelTheme.accentBlue.opacity(0.32), lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
                 }
-            }
-        }
-    }
 
-    @ViewBuilder
-    private var chronologicalRecordingsListRows: some View {
-        let groups = viewModel.chronologicalDayGroups
-        if groups.isEmpty {
-            VStack(spacing: 12) {
-                Image(systemName: "waveform.badge.mic")
-                    .font(.system(size: 44))
-                    .foregroundStyle(PixelTheme.accentBlue.opacity(0.7))
-                Text("No hay grabaciones disponibles")
-                    .font(.headline)
-                Text("Pulsa el botón rojo inferior para iniciar una nueva grabación.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 42)
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-        } else {
-            ForEach(groups) { group in
-                Section {
-                    ForEach(group.recordings) { recording in
+                if !matchingRecordings.isEmpty {
+                    Text("Notas coincidentes (\(matchingRecordings.count))")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+
+                    ForEach(matchingRecordings) { rec in
                         RecordingListCardView(
-                            recording: recording,
+                            recording: rec,
                             onOpen: {
                                 dismissKeyboard()
-                                viewModel.openRecording(recording)
+                                viewModel.openRecording(rec)
                             },
                             onQuickRenameAndTag: {
                                 dismissKeyboard()
-                                viewModel.recordingPendingQuickEdit = recording
+                                viewModel.recordingPendingQuickEdit = rec
                             },
                             onToggleFavorite: {
-                                viewModel.toggleFavorite(recording)
+                                viewModel.toggleFavorite(rec)
                             },
                             onExport: {
                                 dismissKeyboard()
-                                recordingToExport = recording
+                                recordingToExport = rec
                             },
                             onDelete: {
-                                viewModel.deleteRecording(recording)
+                                viewModel.deleteRecording(rec)
                             }
                         )
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                viewModel.deleteRecording(recording)
-                            } label: {
-                                Label("Eliminar", systemImage: "trash.fill")
-                            }
-
-                            Button {
-                                viewModel.toggleFavorite(recording)
-                            } label: {
-                                Label(
-                                    recording.isFavorite ? "Quitar" : "Favorita",
-                                    systemImage: recording.isFavorite ? "star.slash.fill" : "star.fill"
-                                )
-                            }
-                            .tint(PixelTheme.bookmarkAmber)
-
-                            Button {
-                                dismissKeyboard()
-                                viewModel.recordingPendingQuickEdit = recording
-                            } label: {
-                                Label("Etiquetas", systemImage: "folder.badge.plus")
-                            }
-                            .tint(PixelTheme.accentBlue)
-                        }
-                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                            Button {
-                                dismissKeyboard()
-                                recordingToExport = recording
-                            } label: {
-                                Label("Exportar", systemImage: "square.and.arrow.up.fill")
-                            }
-                            .tint(.indigo)
-                        }
                     }
-                } header: {
-                    HStack {
-                        Image(systemName: "calendar.badge.clock")
-                            .foregroundStyle(PixelTheme.accentBlue)
-                        Text(group.headerTitle)
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Text("\(group.recordings.count) nota(s)")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.primary.opacity(0.07), in: Capsule())
-                            .foregroundStyle(.secondary)
-                    }
-                    .textCase(nil)
-                    .padding(.vertical, 2)
                 }
-                .listSectionSeparator(.hidden)
             }
         }
     }
 
-    private var floatingRecordButtonBar: some View {
+    private var backgroundProcessingBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .scaleEffect(0.75)
+                    .tint(PixelTheme.accentBlue)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Procesando \(viewModel.backgroundProcessingTitle)")
+                        .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                    if !viewModel.backgroundProcessingStatus.isEmpty {
+                        Text(viewModel.backgroundProcessingStatus)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 6)
+
+                Text("\(Int(viewModel.backgroundProcessingProgress * 100))%")
+                    .font(.system(.caption2, design: .monospaced).weight(.bold))
+                    .foregroundStyle(PixelTheme.accentBlue)
+            }
+
+            ProgressView(value: viewModel.backgroundProcessingProgress, total: 1.0)
+                .tint(PixelTheme.accentBlue)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .liquidGlassCapsule(tint: PixelTheme.accentBlue.opacity(0.14), interactive: false)
+    }
+}
+
+// MARK: - Carpeta Cuadrada Liquid Glass del Home
+
+private struct FolderLiquidGlassCard: View {
+    let title: String
+    let iconName: String
+    let color: Color
+    let count: Int
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    ZStack {
+                        Circle()
+                            .fill(color.opacity(0.22))
+                            .frame(width: 46, height: 46)
+                        Image(systemName: iconName)
+                            .font(.system(size: 21, weight: .semibold))
+                            .foregroundStyle(color)
+                    }
+
+                    Spacer()
+
+                    Text("\(count)")
+                        .font(.system(.subheadline, design: .monospaced).weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.primary.opacity(0.08), in: Capsule())
+                }
+
+                Spacer(minLength: 10)
+
+                Text(title)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                Text(count == 1 ? "1 grabación" : "\(count) grabaciones")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 148, alignment: .leading)
+            .aspectRatio(1.02, contentMode: .fit)
+            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .liquidGlassRoundedRect(cornerRadius: 24, tint: color.opacity(0.14), interactive: true)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Botón Flotante Circular Liquid Glass de Grabación (Compartido entre Home y Carpetas)
+
+struct FloatingRecordButtonBar: View {
+    let onTapRecord: () -> Void
+
+    var body: some View {
         HStack {
             Spacer()
-            Button {
-                dismissKeyboard()
-                viewModel.isShowingRecordingBooth = true
-            } label: {
+            Button(action: onTapRecord) {
                 ZStack {
                     Circle()
                         .fill(Color.clear)
@@ -574,9 +622,9 @@ struct DashboardView: View {
     }
 }
 
-// MARK: - Tarjeta Individual de Grabación Limpia (Formato DD/MM/YYYY - HH:MM:SS AM/PM + Ícono de Franja + Duración)
+// MARK: - Tarjeta Individual de Grabación Limpia (Compartida en Carpetas y Búsqueda Global)
 
-private struct RecordingListCardView: View {
+struct RecordingListCardView: View {
     let recording: VoiceRecording
     let onOpen: () -> Void
     let onQuickRenameAndTag: () -> Void
@@ -586,7 +634,7 @@ private struct RecordingListCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Fila 1: Título Secuencial Limpio (ej. "Grabación 1") + Botones de Acción
+            // Fila 1: Título Secuencial Limpio + Botones de Acción
             HStack(alignment: .top, spacing: 8) {
                 Text(recording.title)
                     .font(.headline.weight(.bold))
@@ -639,7 +687,7 @@ private struct RecordingListCardView: View {
                 }
             }
 
-            // Fila 2: Fecha y Hora Exacta hasta el Segundo (DD/MM/YYYY - HH:MM:SS AM/PM) + Puro Ícono de Franja Horaria (☀️ / 🌅 / 🌙)
+            // Fila 2: Fecha y Hora Exacta hasta el Segundo + Puro Ícono de Franja Horaria
             HStack(spacing: 8) {
                 HStack(spacing: 5) {
                     Image(systemName: "clock.fill")
@@ -654,7 +702,6 @@ private struct RecordingListCardView: View {
                 .padding(.vertical, 5)
                 .background(PixelTheme.accentBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
-                // Únicamente el ícono de la franja horaria (sin el texto "Mañana / Tarde / Noche")
                 Image(systemName: recording.dayPeriod.iconName)
                     .font(.caption.weight(.bold))
                     .frame(width: 28, height: 28)
@@ -664,7 +711,7 @@ private struct RecordingListCardView: View {
                 Spacer()
             }
 
-            // Fila 3: Únicamente la Duración Exacta (sin peso ni formato técnico exterior)
+            // Fila 3: Duración Exacta + estado en 2º plano + Marcadores
             HStack(spacing: 12) {
                 Label(recording.formattedPreciseDuration, systemImage: "waveform")
                     .font(.system(.caption, design: .monospaced).weight(.semibold))
@@ -759,9 +806,8 @@ private struct RecordingListCardView: View {
     }
 }
 
-/// Píldora de filtro desplegable estilo Apple Mail:
-/// Muestra [Ícono + Texto] únicamente cuando está activa/seleccionada; cuando está inactiva muestra solo [Ícono].
-private struct AppleMailFilterPill: View {
+/// Píldora de filtro desplegable para franjas horarias dentro de cada carpeta.
+struct AppleMailFilterPill: View {
     let title: String
     let icon: String
     let color: Color

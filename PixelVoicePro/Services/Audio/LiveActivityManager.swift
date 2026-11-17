@@ -128,7 +128,7 @@ final class LiveActivityManager {
         var nowPlayingInfo: [String: Any] = [
             MPMediaItemPropertyTitle: "\(statusPrefix) · \( formattedTimer )",
             MPMediaItemPropertyArtist: "\(resolvedTitle) • \(activeSpeaker)",
-            MPMediaItemPropertyAlbumTitle: "PixelVoice Pro (\(formatBadge))",
+            MPMediaItemPropertyAlbumTitle: "Voice Notes (\(formatBadge))",
             MPNowPlayingInfoPropertyIsLiveStream: false,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsedTime,
             MPMediaItemPropertyPlaybackDuration: max(elapsedTime + 3600.0, 3600.0),

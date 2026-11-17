@@ -108,7 +108,7 @@ enum ExportService {
         var lines: [String] = []
         lines.append("# 🎙️ \(recording.title)")
         lines.append("")
-        lines.append("> Generado por **PixelVoice Pro** · Grabadora y Transcripción Inteligente")
+        lines.append("> Generado por **Voice Notes** · Grabadora y Transcripción Inteligente")
         lines.append("")
         lines.append("## 📋 Metadatos Exactos del Archivo")
         lines.append("| Propiedad | Valor Exacto |")
@@ -178,7 +178,7 @@ enum ExportService {
         var lines: [String] = []
         let separator = String(repeating: "=", count: 68)
         lines.append(separator)
-        lines.append("PIXELVOICE PRO - TRANSCRIPCIÓN E INFORME ACÚSTICO")
+        lines.append("VOICE NOTES - TRANSCRIPCIÓN E INFORME ACÚSTICO")
         lines.append(separator)
         lines.append("TÍTULO:              \(recording.title)")
         lines.append("FECHA Y HORA EXACTA: \(recording.formattedExactCreationDate)")
@@ -269,7 +269,7 @@ enum ExportService {
 
             // Cabecera del PDF
             drawText(
-                "PIXELVOICE PRO · INFORME DE TRANSCRIPCIÓN E IA ACÚSTICA",
+                "VOICE NOTES · INFORME DE TRANSCRIPCIÓN E IA ACÚSTICA",
                 font: .systemFont(ofSize: 10, weight: .bold),
                 color: Color.uiColor(fromHex: "#3B82F6"),
                 spacingAfter: 4
@@ -379,7 +379,7 @@ enum ExportService {
             .components(separatedBy: invalidCharacters)
             .joined()
             .replacingOccurrences(of: " ", with: "_")
-        return cleaned.isEmpty ? "Grabacion_PixelVoice" : String(cleaned.prefix(42))
+        return cleaned.isEmpty ? "Grabacion_VoiceNotes" : String(cleaned.prefix(42))
     }
 
     private static func copyOrSynthesizeAudioIfNeeded(from sourceURL: URL, to destinationURL: URL, duration: TimeInterval) throws {

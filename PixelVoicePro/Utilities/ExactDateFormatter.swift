@@ -9,6 +9,14 @@ enum DayPeriod: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var localizedTitle: String {
+        switch self {
+        case .morning: return L10n.periodMorning
+        case .afternoon: return L10n.periodAfternoon
+        case .night: return L10n.periodNight
+        }
+    }
+
     var iconName: String {
         switch self {
         case .morning: return "sun.max.fill"
@@ -64,10 +72,10 @@ enum ExactDateFormatter {
         return formatter
     }()
 
-    /// Nombre del día de la semana en español acompañado siempre de DD/MM/YYYY
-    private static let spanishWeekdayFormatter: DateFormatter = {
+    /// Nombre del día de la semana en el idioma actual del dispositivo acompañado siempre de DD/MM/YYYY
+    private static let localizedWeekdayFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "es_ES")
+        formatter.locale = .autoupdatingCurrent
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.timeZone = TimeZone.current
         formatter.dateFormat = "EEEE"
@@ -108,9 +116,10 @@ enum ExactDateFormatter {
         strictDayKeyFormatter.string(from: date)
     }
 
-    /// Devuelve la cabecera completa del grupo cronológico: `Domingo, 15/11/2026`.
+    /// Devuelve la cabecera completa del grupo cronológico en el idioma actual: ej. `Sunday, 15/11/2026`.
     static func chronologicalGroupHeader(from date: Date) -> String {
-        let weekday = spanishWeekdayFormatter.string(from: date).capitalized
+        localizedWeekdayFormatter.locale = .autoupdatingCurrent
+        let weekday = localizedWeekdayFormatter.string(from: date).localizedCapitalized
         let exactDay = strictDayKeyFormatter.string(from: date)
         return "\(weekday), \(exactDay)"
     }
@@ -188,8 +197,8 @@ enum ExactDateFormatter {
     static func detailedFileSize(bytes: Int64) -> String {
         let numberFormatter = NumberFormatter()
         numberFormatter.numberStyle = .decimal
-        numberFormatter.groupingSeparator = ","
+        numberFormatter.locale = .autoupdatingCurrent
         let exactBytesString = numberFormatter.string(from: NSNumber(value: bytes)) ?? "\(bytes)"
-        return "\(formattedFileSize(bytes: bytes)) (\(exactBytesString) bytes)"
+        return "\(formattedFileSize(bytes: bytes)) (\(exactBytesString) \(L10n.unitBytes))"
     }
 }

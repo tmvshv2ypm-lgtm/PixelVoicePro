@@ -27,16 +27,16 @@ struct TagManagerSheet: View {
                         defaultTagRow(tag)
                     }
                 } header: {
-                    Text("Carpetas Predeterminadas")
+                    Text(L10n.tagsSectionDefault)
                 } footer: {
-                    Text("Las carpetas predeterminadas se pueden ocultar de la pantalla principal con el ícono del ojo, pero no se eliminan.")
+                    Text(L10n.tagsSectionDefaultFooter)
                 }
 
                 // 2. Etiquetas personalizadas creadas por el usuario (sí se pueden eliminar)
-                Section("Etiquetas Personalizadas") {
+                Section(L10n.tagsSectionCustom) {
                     let customTags = viewModel.availableTags.filter { !viewModel.isDefaultTag($0) }
                     if customTags.isEmpty {
-                        Text("Aún no has creado etiquetas personalizadas.")
+                        Text(L10n.tagsEmptyCustom)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     } else {
@@ -47,8 +47,8 @@ struct TagManagerSheet: View {
                 }
 
                 // 3. Creación rápida de etiqueta nueva
-                Section("Nueva Etiqueta") {
-                    TextField("Nombre (ej. Anatomía, Proyecto)", text: $newTagName)
+                Section(L10n.tagsSectionNew) {
+                    TextField(L10n.tagsNewPlaceholder, text: $newTagName)
                         .autocorrectionDisabled()
 
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -72,19 +72,19 @@ struct TagManagerSheet: View {
                     Button {
                         createTagAction()
                     } label: {
-                        Label("Crear Etiqueta", systemImage: "plus.circle.fill")
+                        Label(L10n.tagsCreateButton, systemImage: "plus.circle.fill")
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(PixelTheme.accentBlue)
                     }
                     .disabled(newTagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .navigationTitle("Carpetas y Etiquetas")
+            .navigationTitle(L10n.tagsTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if case .filterLibrary = mode, viewModel.selectedTagFilter != nil {
-                        Button("Limpiar filtro") {
+                        Button(L10n.tagsClearFilter) {
                             viewModel.selectedTagFilter = nil
                             dismiss()
                         }
@@ -92,7 +92,7 @@ struct TagManagerSheet: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Listo") {
+                    Button(L10n.done) {
                         dismiss()
                     }
                     .fontWeight(.bold)
@@ -119,12 +119,12 @@ struct TagManagerSheet: View {
                         .foregroundStyle(tag.color)
                         .frame(width: 24)
 
-                    Text(tag.name)
+                    Text(tag.localizedName)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(isHidden ? .secondary : .primary)
 
                     if isHidden {
-                        Text("Oculta")
+                        Text(L10n.tagsHiddenBadge)
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 6)
@@ -154,7 +154,7 @@ struct TagManagerSheet: View {
                     .frame(width: 32, height: 32)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isHidden ? "Mostrar etiqueta \(tag.name)" : "Ocultar etiqueta \(tag.name)")
+            .accessibilityLabel(isHidden ? L10n.tagsShowAccessibility(tag.localizedName) : L10n.tagsHideAccessibility(tag.localizedName))
         }
     }
 
@@ -172,7 +172,7 @@ struct TagManagerSheet: View {
                         .foregroundStyle(tag.color)
                         .frame(width: 24)
 
-                    Text(tag.name)
+                    Text(tag.localizedName)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
 
@@ -196,7 +196,7 @@ struct TagManagerSheet: View {
                     .frame(width: 32, height: 32)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Eliminar etiqueta \(tag.name)")
+            .accessibilityLabel(L10n.tagsDeleteAccessibility(tag.localizedName))
         }
     }
 

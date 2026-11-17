@@ -35,6 +35,9 @@
 		A10000242700000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000262700000000000001 /* Assets.xcassets */; };
 		A10000302700000000000001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A20000302700000000000001 /* AppIcon.icon */; };
 		A10000252700000000000001 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000272700000000000001 /* LiveActivityManager.swift */; };
+		A10000312700000000000001 /* LocalizationHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000312700000000000001 /* LocalizationHelper.swift */; };
+		A10000322700000000000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A20000322700000000000001 /* Localizable.xcstrings */; };
+		A10000332700000000000001 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A20000332700000000000001 /* InfoPlist.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -69,6 +72,9 @@
 		A20000262700000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = PixelVoicePro/Resources/Assets.xcassets; sourceTree = "<group>"; };
 		A20000302700000000000001 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = PixelVoicePro/Resources/AppIcon.icon; sourceTree = "<group>"; };
 		A20000272700000000000001 /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/Audio/LiveActivityManager.swift; sourceTree = "<group>"; };
+		A20000312700000000000001 /* LocalizationHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Utilities/LocalizationHelper.swift; sourceTree = "<group>"; };
+		A20000322700000000000001 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = PixelVoicePro/Resources/Localizable.xcstrings; sourceTree = "<group>"; };
+		A20000332700000000000001 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = PixelVoicePro/Resources/InfoPlist.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -79,6 +85,7 @@
 				A20000022700000000000001 /* ContentView.swift */,
 				A20000032700000000000001 /* ExactDateFormatter.swift */,
 				A20000042700000000000001 /* ColorTheme.swift */,
+				A20000312700000000000001 /* LocalizationHelper.swift */,
 				A20000052700000000000001 /* RecordingModels.swift */,
 				A20000062700000000000001 /* VoiceRecording.swift */,
 				A20000072700000000000001 /* AudioSessionManager.swift */,
@@ -105,6 +112,8 @@
 				A20000252700000000000001 /* PixelVoicePro.entitlements */,
 				A20000262700000000000001 /* Assets.xcassets */,
 				A20000302700000000000001 /* AppIcon.icon */,
+				A20000322700000000000001 /* Localizable.xcstrings */,
+				A20000332700000000000001 /* InfoPlist.xcstrings */,
 				A30000022700000000000001 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -148,11 +157,43 @@
 			};
 			buildConfigurationList = A60000012700000000000001 /* Build configuration list for PBXProject "PixelVoicePro" */;
 			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = es;
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				es,
 				en,
+				es,
+				"pt-BR",
+				"pt-PT",
+				ru,
+				ko,
+				"zh-Hans",
+				"zh-Hant",
+				ja,
+				fr,
+				de,
+				it,
+				ar,
+				hi,
+				tr,
+				nl,
+				pl,
+				uk,
+				id,
+				vi,
+				th,
+				sv,
+				da,
+				nb,
+				fi,
+				el,
+				he,
+				cs,
+				ro,
+				hu,
+				ms,
+				ca,
+				hr,
+				sk,
 				Base,
 			);
 			mainGroup = A30000012700000000000001;
@@ -172,6 +213,8 @@
 			files = (
 				A10000242700000000000001 /* Assets.xcassets in Resources */,
 				A10000302700000000000001 /* AppIcon.icon in Resources */,
+				A10000322700000000000001 /* Localizable.xcstrings in Resources */,
+				A10000332700000000000001 /* InfoPlist.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -186,6 +229,7 @@
 				A10000022700000000000001 /* ContentView.swift in Sources */,
 				A10000032700000000000001 /* ExactDateFormatter.swift in Sources */,
 				A10000042700000000000001 /* ColorTheme.swift in Sources */,
+				A10000312700000000000001 /* LocalizationHelper.swift in Sources */,
 				A10000052700000000000001 /* RecordingModels.swift in Sources */,
 				A10000062700000000000001 /* VoiceRecording.swift in Sources */,
 				A10000072700000000000001 /* AudioSessionManager.swift in Sources */,

@@ -10,7 +10,7 @@ final class AudioSessionManager: ObservableObject {
 
     @Published private(set) var microphonePermissionGranted: Bool = false
     @Published private(set) var speechPermissionGranted: Bool = false
-    @Published private(set) var currentInputRouteName: String = "Micrófono del iPhone"
+    @Published private(set) var currentInputRouteName: String = L10n.micDefault
     @Published private(set) var isInterrupted: Bool = false
 
     var onInterruptionBegan: (() -> Void)?
@@ -96,7 +96,7 @@ final class AudioSessionManager: ObservableObject {
         if let input = session.currentRoute.inputs.first {
             currentInputRouteName = input.portName
         } else {
-            currentInputRouteName = "Micrófono Integrado iPhone"
+            currentInputRouteName = L10n.micBuiltIn
         }
     }
 

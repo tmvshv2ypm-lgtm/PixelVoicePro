@@ -14,7 +14,7 @@ struct SpeakerRenameSheet: View {
         NavigationStack {
             List {
                 Section {
-                    Text("Cambia \"Locutor 1\", \"Locutor 2\", etc. por el nombre real de cada persona. El nombre y color se actualizarán al instante en todos los párrafos de la transcripción, estadísticas y exportaciones.")
+                    Text(L10n.speakersInstructions)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -33,17 +33,17 @@ struct SpeakerRenameSheet: View {
                                     )
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(speaker.defaultLabel)
+                                    Text(speaker.localizedDefaultLabel)
                                         .font(.caption.weight(.bold))
                                         .foregroundStyle(.secondary)
-                                    Text("Pitch vocal medio: \(Int(speaker.pitchMeanHz)) Hz · \(speaker.wordCount) palabras")
+                                    Text(L10n.speakersPitchWords(hz: Int(speaker.pitchMeanHz), words: speaker.wordCount))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
                             }
 
                             TextField(
-                                "Nombre real (ej. Dr. Martínez, Ana, Profesor)",
+                                L10n.speakersNamePlaceholder,
                                 text: Binding(
                                     get: { speaker.customName ?? "" },
                                     set: { speaker.customName = $0 }
@@ -75,23 +75,23 @@ struct SpeakerRenameSheet: View {
                         HStack {
                             Text(speaker.displayName)
                             if speaker.id == initialSpeakerId {
-                                Text("• Seleccionado")
+                                Text(L10n.speakersSelectedBadge)
                                     .foregroundStyle(PixelTheme.accentBlue)
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Identificación de Locutores")
+            .navigationTitle(L10n.speakersNavTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar") {
+                    Button(L10n.cancel) {
                         dismiss()
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Aplicar en Toda la Nota") {
+                    Button(L10n.speakersApplyButton) {
                         for item in editableSpeakers {
                             recording.renameSpeaker(
                                 speakerId: item.id,

@@ -50,14 +50,14 @@ final class LiveActivityManager {
         title: String,
         startDate: Date,
         formatBadge: String,
-        activeSpeaker: String = "Locutor 1"
+        activeSpeaker: String = L10n.speakerDefaultName(1)
     ) {
         lastUpdateSecond = -1
         lastArtworkStatePaused = nil
         configureLockScreenRemoteCommands()
 
         let resolvedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "Grabando Nota de Voz"
+            ? L10n.lockscreenRecordingTitle
             : title
 
         #if canImport(ActivityKit)
@@ -111,10 +111,10 @@ final class LiveActivityManager {
         lastUpdateSecond = currentSecond
 
         let resolvedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "Grabación en Curso"
+            ? L10n.lockscreenInProgress
             : title
         let formattedTimer = Self.formatHHMMSS(currentSecond)
-        let statusPrefix = isPaused ? "⏸️ EN PAUSA" : "🔴 GRABANDO EN VIVO"
+        let statusPrefix = isPaused ? L10n.lockscreenStatusPaused : L10n.lockscreenStatusLive
 
         if cachedArtwork == nil || lastArtworkStatePaused != isPaused || (currentSecond % 5 == 0) {
             cachedArtwork = generateLockScreenBadgeArtwork(
@@ -190,7 +190,7 @@ final class LiveActivityManager {
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.bookmarkCommand.isEnabled = true
-        commandCenter.bookmarkCommand.localizedTitle = "Añadir Marcador"
+        commandCenter.bookmarkCommand.localizedTitle = L10n.lockscreenAddBookmark
 
         commandCenter.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.onTogglePauseFromLockScreen?() }
@@ -265,7 +265,7 @@ final class LiveActivityManager {
                 .foregroundColor: accentColor,
                 .paragraphStyle: paragraph
             ]
-            let stateText = isPaused ? "PAUSADO" : "EN VIVO · \(formatBadge)"
+            let stateText = isPaused ? L10n.lockscreenBadgePaused : L10n.lockscreenBadgeLive(formatBadge)
             NSString(string: stateText).draw(in: CGRect(x: 20, y: 208, width: 260, height: 24), withAttributes: subAttrs)
         }
 

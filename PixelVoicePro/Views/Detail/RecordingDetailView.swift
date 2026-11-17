@@ -11,12 +11,28 @@ struct RecordingDetailView: View {
         case fileDetails = "Detalles"
 
         var id: String { rawValue }
+
+        var localizedTitle: String {
+            switch self {
+            case .player: return L10n.tabAudio
+            case .transcript: return L10n.tabTranscript
+            case .summaryAndBookmarks: return L10n.tabSummary
+            case .fileDetails: return L10n.tabDetails
+            }
+        }
     }
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @ObservedObject var viewModel: AppViewModel
     let recording: VoiceRecording
     let initialSeekTimestamp: TimeInterval?
     let initialSearchKeyword: String?
+
+    private var isCompactVertical: Bool {
+        verticalSizeClass == .compact
+    }
 
     @StateObject private var playerService = AudioPlayerService()
 
@@ -46,7 +62,7 @@ struct RecordingDetailView: View {
                         ProgressView()
                             .scaleEffect(0.75)
                             .tint(PixelTheme.accentBlue)
-                        Text(viewModel.backgroundProcessingStatus.isEmpty ? "Procesando en 2º plano..." : viewModel.backgroundProcessingStatus)
+                        Text(viewModel.backgroundProcessingStatus.isEmpty ? L10n.processingBackgroundShort : viewModel.backgroundProcessingStatus)
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -93,8 +109,9 @@ struct RecordingDetailView: View {
             // Mini reproductor flotante Liquid Glass cuando se visualiza Transcripción, Resumen o Detalles
             if selectedTab != .player {
                 floatingLiquidGlassMiniPlayer
+                    .frame(maxWidth: 520)
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, isCompactVertical ? 6 : 10)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -106,13 +123,13 @@ struct RecordingDetailView: View {
                     selectedSpeakerIdForRename = recording.speakers.first?.id
                     isShowingSpeakerRenameSheet = true
                 } label: {
-                    Label("Locutores", systemImage: "person.2.wave.2.fill")
+                    Label(L10n.toolbarSpeakers, systemImage: "person.2.wave.2.fill")
                 }
 
                 Button {
                     isShowingExportSheet = true
                 } label: {
-                    Label("Exportar", systemImage: "square.and.arrow.up")
+                    Label(L10n.export, systemImage: "square.and.arrow.up")
                 }
             }
         }
@@ -160,7 +177,7 @@ struct RecordingDetailView: View {
                         }
                     }
                 } label: {
-                    Text(tab.rawValue)
+                    Text(tab.localizedTitle)
                         .font(.caption.weight(isSelected ? .bold : .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
@@ -177,8 +194,9 @@ struct RecordingDetailView: View {
         }
         .padding(4)
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+        .frame(maxWidth: horizontalSizeClass == .regular ? 760 : .infinity)
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.vertical, isCompactVertical ? 4 : 8)
     }
 
     private var floatingLiquidGlassMiniPlayer: some View {
@@ -234,20 +252,20 @@ struct RecordingDetailView: View {
     // MARK: - 1. Cabecera con Fecha y Hora Exacta Siempre Visible
 
     private var detailTopHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: isCompactVertical ? 4 : 6) {
             HStack(alignment: .top, spacing: 8) {
                 Button {
                     isShowingQuickEditSheet = true
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(recording.title)
-                            .font(.largeTitle.weight(.bold))
+                            .font(isCompactVertical ? .title3.weight(.bold) : .largeTitle.weight(.bold))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
-                            .lineLimit(2)
+                            .lineLimit(isCompactVertical ? 1 : 2)
                             .minimumScaleFactor(0.72)
                         Image(systemName: "pencil.circle.fill")
-                            .font(.title3)
+                            .font(isCompactVertical ? .subheadline : .title3)
                             .foregroundStyle(PixelTheme.accentBlue)
                     }
                 }
@@ -282,7 +300,7 @@ struct RecordingDetailView: View {
                             ForEach(recording.tags) { tag in
                                 HStack(spacing: 4) {
                                     Image(systemName: tag.iconName)
-                                    Text(tag.name)
+                                    Text(tag.localizedName)
                                 }
                                 .font(.system(size: 10, weight: .bold))
                                 .lineLimit(1)
@@ -300,7 +318,9 @@ struct RecordingDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 2)
-        .padding(.bottom, 4)
+        .padding(.bottom, isCompactVertical ? 2 : 4)
+        .frame(maxWidth: horizontalSizeClass == .regular ? 920 : .infinity)
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - 2. Buscador Local con Navegación de Coincidencias
@@ -312,7 +332,7 @@ struct RecordingDetailView: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(PixelTheme.accentBlue)
 
-                TextField("Buscar palabra en esta grabación...", text: $localSearchQuery)
+                TextField(L10n.detailSearchPlaceholder, text: $localSearchQuery)
                     .focused($isLocalSearchFocused)
                     .font(.caption)
                     .textInputAutocapitalization(.never)
@@ -365,6 +385,7 @@ struct RecordingDetailView: View {
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11))
         }
         .padding(.horizontal, 16)
+        .frame(maxWidth: horizontalSizeClass == .regular ? 860 : .infinity)
     }
 
     // MARK: - Pestaña 1: Transcripción Interactiva Sincronizada (Karaoke-Style)
@@ -407,8 +428,8 @@ struct RecordingDetailView: View {
                                 .foregroundStyle(recording.isProcessingBackground ? PixelTheme.accentBlue : .secondary)
                             Text(
                                 recording.isProcessingBackground
-                                    ? "Transcribiendo audio en segundo plano..."
-                                    : "Esta grabación no contiene palabras transcritas."
+                                    ? L10n.detailTranscribingBg
+                                    : L10n.detailNoTranscript
                             )
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
@@ -446,6 +467,8 @@ struct RecordingDetailView: View {
                 }
                 .padding(16)
                 .padding(.bottom, 84)
+                .frame(maxWidth: horizontalSizeClass == .regular ? 860 : .infinity)
+                .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.immediately)
             .onTapGesture {
@@ -469,7 +492,7 @@ struct RecordingDetailView: View {
                 // 1. Añadir nuevo marcador en el segundo actual de reproducción
                 VStack(alignment: .leading, spacing: 8) {
                     Label(
-                        "Marcadores",
+                        L10n.detailBookmarks,
                         systemImage: "bookmark.fill"
                     )
                     .font(.subheadline.weight(.bold))
@@ -477,7 +500,7 @@ struct RecordingDetailView: View {
 
                     HStack(spacing: 8) {
                         TextField(
-                            "Añadir marcador en \(ExactDateFormatter.exactAudioPosition(playerService.currentTime))...",
+                            L10n.detailAddBookmarkAt(ExactDateFormatter.exactAudioPosition(playerService.currentTime)),
                             text: $newPlaybackBookmarkLabel
                         )
                         .font(.caption)
@@ -491,7 +514,7 @@ struct RecordingDetailView: View {
                             newPlaybackBookmarkLabel = ""
                             viewModel.saveChanges()
                         } label: {
-                            Label("Marcar", systemImage: "plus.circle.fill")
+                            Label(L10n.mark, systemImage: "plus.circle.fill")
                                 .font(.caption.weight(.bold))
                         }
                         .buttonStyle(.borderedProminent)
@@ -499,7 +522,7 @@ struct RecordingDetailView: View {
                     }
 
                     if recording.bookmarks.isEmpty {
-                        Text("No hay marcadores en esta nota. Puedes añadirlos en vivo mientras grabas o aquí durante la reproducción.")
+                        Text(L10n.detailNoBookmarks)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.vertical, 4)
@@ -553,14 +576,14 @@ struct RecordingDetailView: View {
                 // 2. Eventos Acústicos Detectados (SoundAnalysis: Risas, Música, Aplausos, Pausas)
                 VStack(alignment: .leading, spacing: 8) {
                     Label(
-                        "Eventos Acústicos",
+                        L10n.detailAcousticEvents,
                         systemImage: "waveform.badge.magnifyingglass"
                     )
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(PixelTheme.accentCyan)
 
                     if recording.acousticEvents.isEmpty {
-                        Text("No se detectaron eventos no verbales (risas, aplausos, música o pausas largas) en esta grabación.")
+                        Text(L10n.detailNoAcousticEvents)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -578,14 +601,14 @@ struct RecordingDetailView: View {
                                         Text(event.formattedInlineTag)
                                             .font(.caption.weight(.bold))
                                             .foregroundStyle(event.type.color)
-                                        Text("Confianza IA: \(Int(event.confidence * 100))% · Duración: \(String(format: "%.1fs", event.duration))")
+                                        Text(L10n.detailAIConfidenceDuration(confidencePct: Int(event.confidence * 100), durationText: String(format: "%.1f", event.duration)))
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                     }
 
                                     Spacer()
 
-                                    Label("Saltar", systemImage: "play.fill")
+                                    Label(L10n.jump, systemImage: "play.fill")
                                         .font(.caption2.weight(.bold))
                                         .padding(.horizontal, 9)
                                         .padding(.vertical, 4)
@@ -603,11 +626,11 @@ struct RecordingDetailView: View {
                 // 3. Estadísticas de Intervención por Locutor (Speaker Diarization)
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Label("Participación por Locutor", systemImage: "person.2.fill")
+                        Label(L10n.detailSpeakerParticipation, systemImage: "person.2.fill")
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(PixelTheme.accentBlue)
                         Spacer()
-                        Button("Renombrar Locutores") {
+                        Button(L10n.detailRenameSpeakers) {
                             selectedSpeakerIdForRename = recording.speakers.first?.id
                             isShowingSpeakerRenameSheet = true
                         }
@@ -629,7 +652,7 @@ struct RecordingDetailView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Text("\(spk.wordCount) palabras · \(ExactDateFormatter.standardDuration(spk.totalSpeakingDuration))")
+                                Text(L10n.detailWordsDuration(wordCount: spk.wordCount, durationText: ExactDateFormatter.standardDuration(spk.totalSpeakingDuration)))
                                     .font(.system(.caption2, design: .monospaced).weight(.semibold))
                                     .foregroundStyle(.secondary)
                             }
@@ -637,7 +660,7 @@ struct RecordingDetailView: View {
                             ProgressView(value: ratio)
                                 .tint(spk.color)
 
-                            Text("Frecuencia fundamental media (Pitch F0): \(Int(spk.pitchMeanHz)) Hz")
+                            Text(L10n.detailMeanPitch(Int(spk.pitchMeanHz)))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
@@ -648,6 +671,8 @@ struct RecordingDetailView: View {
             }
             .padding(16)
             .padding(.bottom, 84)
+            .frame(maxWidth: horizontalSizeClass == .regular ? 860 : .infinity)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -655,36 +680,36 @@ struct RecordingDetailView: View {
 
     private var technicalFileDetailsTabView: some View {
         List {
-            Section("Cronología") {
-                MetadataRow(title: "Creación Exacta", value: recording.formattedExactCreationDate, monospaced: true)
-                MetadataRow(title: "Finalización Exacta", value: recording.formattedExactEndDate, monospaced: true)
-                MetadataRow(title: "Fecha de Agrupación", value: recording.dayGroupKey, monospaced: true)
-                MetadataRow(title: "Franja del Día", value: recording.dayPeriod.rawValue, monospaced: false)
-                MetadataRow(title: "Duración con Centésimas", value: recording.formattedPreciseDuration, monospaced: true)
+            Section(L10n.detailSectionTimeline) {
+                MetadataRow(title: L10n.detailExactCreated, value: recording.formattedExactCreationDate, monospaced: true)
+                MetadataRow(title: L10n.detailExactEnded, value: recording.formattedExactEndDate, monospaced: true)
+                MetadataRow(title: L10n.detailGroupDate, value: recording.dayGroupKey, monospaced: true)
+                MetadataRow(title: L10n.detailDayPeriod, value: recording.dayPeriod.localizedTitle, monospaced: false)
+                MetadataRow(title: L10n.detailDurationPrecise, value: recording.formattedPreciseDuration, monospaced: true)
             }
 
-            Section("Almacenamiento") {
-                MetadataRow(title: "Nombre de Archivo", value: recording.audioFileName, monospaced: true)
-                MetadataRow(title: "Formato y Códec", value: recording.audioFormat.displayName, monospaced: false)
-                MetadataRow(title: "Peso Exacto", value: recording.formattedDetailedFileSize, monospaced: true)
-                MetadataRow(title: "Frecuencia de Muestreo", value: "\(Int(recording.sampleRate)) Hz", monospaced: true)
-                MetadataRow(title: "Bitrate", value: "\(recording.bitRate / 1000) kbps", monospaced: true)
-                MetadataRow(title: "Canales", value: "\(recording.channelCount) (Mono Vocal)", monospaced: false)
-                MetadataRow(title: "SHA-256 Integridad", value: recording.sha256Hash.isEmpty ? "Calculando..." : String(recording.sha256Hash.prefix(24)) + "...", monospaced: true)
+            Section(L10n.detailSectionStorage) {
+                MetadataRow(title: L10n.detailFileName, value: recording.audioFileName, monospaced: true)
+                MetadataRow(title: L10n.detailFormatCodec, value: recording.audioFormat.displayName, monospaced: false)
+                MetadataRow(title: L10n.detailExactSize, value: recording.formattedDetailedFileSize, monospaced: true)
+                MetadataRow(title: L10n.detailSampleRate, value: "\(Int(recording.sampleRate)) Hz", monospaced: true)
+                MetadataRow(title: L10n.detailBitrate, value: "\(recording.bitRate / 1000) kbps", monospaced: true)
+                MetadataRow(title: L10n.detailChannels, value: L10n.detailChannelsMono(recording.channelCount), monospaced: false)
+                MetadataRow(title: L10n.detailSHA256, value: recording.sha256Hash.isEmpty ? L10n.detailCalculating : String(recording.sha256Hash.prefix(24)) + "...", monospaced: true)
             }
 
-            Section("Análisis e IA") {
-                MetadataRow(title: "Motor Utilizado", value: recording.transcriptionEngineUsed, monospaced: false)
-                MetadataRow(title: "Locutores Detectados", value: "\(recording.speakers.count)", monospaced: true)
-                MetadataRow(title: "Eventos Acústicos", value: "\(recording.acousticEvents.count)", monospaced: true)
-                MetadataRow(title: "Intervalos de Silencio", value: "\(recording.silenceIntervals.count)", monospaced: true)
+            Section(L10n.detailSectionAI) {
+                MetadataRow(title: L10n.detailEngineUsed, value: recording.transcriptionEngineUsed, monospaced: false)
+                MetadataRow(title: L10n.detailDetectedSpeakers, value: "\(recording.speakers.count)", monospaced: true)
+                MetadataRow(title: L10n.detailAcousticEvents, value: "\(recording.acousticEvents.count)", monospaced: true)
+                MetadataRow(title: L10n.detailSilenceIntervals, value: "\(recording.silenceIntervals.count)", monospaced: true)
             }
 
-            Section("Exportación") {
+            Section(L10n.detailSectionExport) {
                 Button {
                     isShowingExportSheet = true
                 } label: {
-                    Label("Exportar Audio / Documento", systemImage: "square.and.arrow.up.fill")
+                    Label(L10n.detailExportButton, systemImage: "square.and.arrow.up.fill")
                         .fontWeight(.bold)
                 }
             }
@@ -698,155 +723,204 @@ struct RecordingDetailView: View {
     // MARK: - 5. Reproductor a Pantalla Completa (Apple Music / Voice Memos)
 
     private var fullScreenAudioPlayerView: some View {
-        VStack(spacing: 18) {
-            // Onda interactiva de ancho completo sin caja gris
-            InteractiveTimelineWaveformView(
-                recording: recording,
-                currentTime: playerService.currentTime,
-                duration: playerService.duration,
-                searchHits: localSearchHits,
-                onSeek: { second in
-                    playerService.seek(to: second, autoPlay: true)
-                },
-                isFullScreenExpanded: true
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.top, 6)
-
-            // Indicadores de tiempo exacto + estado de "Saltar silencios"
-            HStack {
-                Text(ExactDateFormatter.preciseChronometer(playerService.currentTime, alwaysShowHours: false))
-                    .font(.system(.subheadline, design: .monospaced).weight(.bold))
-                    .foregroundStyle(PixelTheme.accentBlue)
-
-                Spacer()
-
-                if playerService.skipSilenceEnabled {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bolt.horizontal.fill")
-                            .font(.caption2)
-                        Text(
-                            playerService.isCurrentlySkippingSilence
-                                ? "¡Saltando silencio!"
-                                : "Ahorrado: \(String(format: "%.1fs", playerService.totalSilenceSavedSeconds))"
+        Group {
+            if isCompactVertical {
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(spacing: 8) {
+                        InteractiveTimelineWaveformView(
+                            recording: recording,
+                            currentTime: playerService.currentTime,
+                            duration: playerService.duration,
+                            searchHits: localSearchHits,
+                            onSeek: { second in
+                                playerService.seek(to: second, autoPlay: true)
+                            },
+                            isFullScreenExpanded: true,
+                            minWaveformHeight: 84
                         )
-                        .font(.caption2.weight(.bold))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                        playerTimeAndSkipBanner(horizontalPadding: 14)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .liquidGlassCapsule(tint: PixelTheme.successEmerald.opacity(0.25), interactive: false)
-                    .foregroundStyle(PixelTheme.successEmerald)
-                }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Spacer()
-
-                Text(ExactDateFormatter.preciseChronometer(playerService.duration, alwaysShowHours: false))
-                    .font(.system(.subheadline, design: .monospaced).weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 22)
-
-            // Controles de transporte limpios: solo íconos circulares (sin textos -10s/-5s/+5s/+10s) y Play azul Liquid Glass
-            HStack(spacing: 22) {
-                Button {
-                    playerService.skip(by: -10.0)
-                } label: {
-                    Image(systemName: "gobackward.10")
-                        .font(.title2.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    playerService.skip(by: -5.0)
-                } label: {
-                    Image(systemName: "gobackward.5")
-                        .font(.title2.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    playerService.togglePlayPause()
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(PixelTheme.accentBlue)
-                            .frame(width: 72, height: 72)
-                            .liquidGlassCircle(tint: PixelTheme.accentBlue)
-                            .shadow(color: PixelTheme.accentBlue.opacity(0.45), radius: 14, x: 0, y: 6)
-
-                        Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.title.weight(.bold))
-                            .foregroundStyle(.white)
-                            .offset(x: playerService.isPlaying ? 0 : 2)
+                    VStack(spacing: 14) {
+                        playerTransportControls(compact: true)
+                        playerSpeedAndSkipSilences(compact: true)
                     }
+                    .frame(maxWidth: 330)
+                    .padding(.vertical, 6)
                 }
-                .buttonStyle(.plain)
-
-                Button {
-                    playerService.skip(by: 5.0)
-                } label: {
-                    Image(systemName: "goforward.5")
-                        .font(.title2.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    playerService.skip(by: 10.0)
-                } label: {
-                    Image(systemName: "goforward.10")
-                        .font(.title2.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain)
-            }
-
-            // Fila de velocidades en UNA sola línea ("0.5x", "1.0x", "1.25x", "1.5x", "2.0x") + botón Saltar Silencios
-            VStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    ForEach(PlaybackSpeedOption.allCases) { speed in
-                        let selected = playerService.playbackSpeed == speed
-                        Button {
-                            playerService.playbackSpeed = speed
-                        } label: {
-                            Text(speed.label)
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .liquidGlassCapsule(
-                                    tint: selected ? PixelTheme.accentBlue : nil
-                                )
-                                .foregroundStyle(selected ? .white : .primary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-
-                Button {
-                    playerService.skipSilenceEnabled.toggle()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: playerService.skipSilenceEnabled ? "bolt.fill" : "bolt.slash")
-                        Text("Saltar silencios")
-                            .lineLimit(1)
-                    }
-                    .font(.caption.weight(.bold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .liquidGlassCapsule(
-                        tint: playerService.skipSilenceEnabled ? PixelTheme.successEmerald : nil
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 18) {
+                    // Onda interactiva de ancho completo sin caja gris
+                    InteractiveTimelineWaveformView(
+                        recording: recording,
+                        currentTime: playerService.currentTime,
+                        duration: playerService.duration,
+                        searchHits: localSearchHits,
+                        onSeek: { second in
+                            playerService.seek(to: second, autoPlay: true)
+                        },
+                        isFullScreenExpanded: true
                     )
-                    .foregroundStyle(playerService.skipSilenceEnabled ? .white : .primary)
+                    .frame(maxWidth: horizontalSizeClass == .regular ? 960 : .infinity, maxHeight: .infinity)
+                    .padding(.top, 6)
+
+                    playerTimeAndSkipBanner(horizontalPadding: 22)
+                        .frame(maxWidth: horizontalSizeClass == .regular ? 720 : .infinity)
+
+                    playerTransportControls(compact: false)
+
+                    playerSpeedAndSkipSilences(compact: false)
+                        .padding(.bottom, 16)
                 }
-                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(.bottom, 16)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func playerTimeAndSkipBanner(horizontalPadding: CGFloat) -> some View {
+        HStack {
+            Text(ExactDateFormatter.preciseChronometer(playerService.currentTime, alwaysShowHours: false))
+                .font(.system(.subheadline, design: .monospaced).weight(.bold))
+                .foregroundStyle(PixelTheme.accentBlue)
+
+            Spacer()
+
+            if playerService.skipSilenceEnabled {
+                HStack(spacing: 4) {
+                    Image(systemName: "bolt.horizontal.fill")
+                        .font(.caption2)
+                    Text(
+                        playerService.isCurrentlySkippingSilence
+                            ? L10n.playerSkippingSilence
+                            : L10n.playerSavedSeconds(String(format: "%.1f", playerService.totalSilenceSavedSeconds))
+                    )
+                    .font(.caption2.weight(.bold))
+                    .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .liquidGlassCapsule(tint: PixelTheme.successEmerald.opacity(0.25), interactive: false)
+                .foregroundStyle(PixelTheme.successEmerald)
+            }
+
+            Spacer()
+
+            Text(ExactDateFormatter.preciseChronometer(playerService.duration, alwaysShowHours: false))
+                .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, horizontalPadding)
+    }
+
+    private func playerTransportControls(compact: Bool) -> some View {
+        let playSize: CGFloat = compact ? 58 : 72
+        let skipSize: CGFloat = compact ? 38 : 44
+        let spacing: CGFloat = compact ? 12 : 22
+
+        return HStack(spacing: spacing) {
+            Button {
+                playerService.skip(by: -10.0)
+            } label: {
+                Image(systemName: "gobackward.10")
+                    .font((compact ? Font.title3 : Font.title2).weight(.semibold))
+                    .frame(width: skipSize, height: skipSize)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                playerService.skip(by: -5.0)
+            } label: {
+                Image(systemName: "gobackward.5")
+                    .font((compact ? Font.title3 : Font.title2).weight(.semibold))
+                    .frame(width: skipSize, height: skipSize)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                playerService.togglePlayPause()
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(PixelTheme.accentBlue)
+                        .frame(width: playSize, height: playSize)
+                        .liquidGlassCircle(tint: PixelTheme.accentBlue)
+                        .shadow(color: PixelTheme.accentBlue.opacity(0.45), radius: 14, x: 0, y: 6)
+
+                    Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
+                        .font((compact ? Font.title2 : Font.title).weight(.bold))
+                        .foregroundStyle(.white)
+                        .offset(x: playerService.isPlaying ? 0 : 2)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                playerService.skip(by: 5.0)
+            } label: {
+                Image(systemName: "goforward.5")
+                    .font((compact ? Font.title3 : Font.title2).weight(.semibold))
+                    .frame(width: skipSize, height: skipSize)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                playerService.skip(by: 10.0)
+            } label: {
+                Image(systemName: "goforward.10")
+                    .font((compact ? Font.title3 : Font.title2).weight(.semibold))
+                    .frame(width: skipSize, height: skipSize)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func playerSpeedAndSkipSilences(compact: Bool) -> some View {
+        VStack(spacing: compact ? 10 : 12) {
+            HStack(spacing: compact ? 6 : 8) {
+                ForEach(PlaybackSpeedOption.allCases) { speed in
+                    let selected = playerService.playbackSpeed == speed
+                    Button {
+                        playerService.playbackSpeed = speed
+                    } label: {
+                        Text(speed.label)
+                            .font(.system(size: compact ? 12 : 13, weight: .bold, design: .monospaced))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, compact ? 9 : 12)
+                            .padding(.vertical, compact ? 6 : 8)
+                            .liquidGlassCapsule(
+                                tint: selected ? PixelTheme.accentBlue : nil
+                            )
+                            .foregroundStyle(selected ? .white : .primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Button {
+                playerService.skipSilenceEnabled.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: playerService.skipSilenceEnabled ? "bolt.fill" : "bolt.slash")
+                    Text(L10n.playerSkipSilences)
+                        .lineLimit(1)
+                }
+                .font(.caption.weight(.bold))
+                .padding(.horizontal, 16)
+                .padding(.vertical, compact ? 8 : 9)
+                .liquidGlassCapsule(
+                    tint: playerService.skipSilenceEnabled ? PixelTheme.successEmerald : nil
+                )
+                .foregroundStyle(playerService.skipSilenceEnabled ? .white : .primary)
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 
@@ -999,8 +1073,8 @@ private struct KaraokeSegmentCardView: View {
     private func matchesLocalSearch(_ word: String) -> Bool {
         let trimmed = localSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
-        let normWord = word.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES"))
-        let normQuery = trimmed.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES"))
+        let normWord = word.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        let normQuery = trimmed.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
         return normWord.contains(normQuery)
     }
 }

@@ -5,13 +5,23 @@ import PDFKit
 
 /// Opciones de exportación limpia de PixelVoice Pro.
 enum ExportFormatSelection: String, CaseIterable, Identifiable {
-    case audioOnly = "Solo Archivo de Audio"
-    case transcriptPDF = "Transcripción en PDF (.pdf)"
-    case transcriptMarkdown = "Transcripción en Markdown (.md)"
-    case transcriptPlainText = "Transcripción en Texto Plano (.txt)"
-    case completePackage = "Paquete Completo (Audio + PDF + MD + TXT)"
+    case audioOnly
+    case transcriptPDF
+    case transcriptMarkdown
+    case transcriptPlainText
+    case completePackage
 
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .audioOnly: return L10n.exportFormatAudioTitle
+        case .transcriptPDF: return L10n.exportFormatPDFTitle
+        case .transcriptMarkdown: return L10n.exportFormatMDTitle
+        case .transcriptPlainText: return L10n.exportFormatTXTTitle
+        case .completePackage: return L10n.exportFormatPkgTitle
+        }
+    }
 
     var iconName: String {
         switch self {
@@ -25,16 +35,11 @@ enum ExportFormatSelection: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .audioOnly:
-            return "Exporta el archivo de audio original (.m4a o .wav) con nombre fechado al segundo."
-        case .transcriptPDF:
-            return "Documento PDF maquetado con hora exacta, locutores en color, marcadores y etiquetas [😂 Risas]."
-        case .transcriptMarkdown:
-            return "Archivo .md estructurado con tablas de metadatos, bloques por locutor y eventos acústicos."
-        case .transcriptPlainText:
-            return "Archivo .txt universal con marcas de tiempo exactas al segundo, locutores y eventos."
-        case .completePackage:
-            return "Incluye el audio original junto con la transcripción en PDF, Markdown (.md) y Texto (.txt) lista para Google NotebookLM."
+        case .audioOnly: return L10n.exportFormatAudioSub
+        case .transcriptPDF: return L10n.exportFormatPDFSub
+        case .transcriptMarkdown: return L10n.exportFormatMDSub
+        case .transcriptPlainText: return L10n.exportFormatTXTSub
+        case .completePackage: return L10n.exportFormatPkgSub
         }
     }
 }
@@ -80,7 +85,7 @@ enum ExportService {
             return [txtURL]
 
         case .completePackage:
-            let packageDir = exportRoot.appendingPathComponent("Paquete_\(baseName)", isDirectory: true)
+            let packageDir = exportRoot.appendingPathComponent("\(sanitizeFileName(L10n.exportPackagePrefix))_\(baseName)", isDirectory: true)
             if FileManager.default.fileExists(atPath: packageDir.path) {
                 try FileManager.default.removeItem(at: packageDir)
             }
@@ -108,42 +113,50 @@ enum ExportService {
         var lines: [String] = []
         lines.append("# 🎙️ \(recording.title)")
         lines.append("")
-        lines.append("> Generado por **Voice Notes** · Grabadora y Transcripción Inteligente")
+        lines.append(L10n.exportMDSubtitle)
         lines.append("")
-        lines.append("## 📋 Metadatos Exactos del Archivo")
-        lines.append("| Propiedad | Valor Exacto |")
+        lines.append(L10n.exportMDMetadataHeading)
+        lines.append(L10n.exportMDTableHeader)
         lines.append("| :--- | :--- |")
-        lines.append("| **Fecha y Hora de Creación** | `\(recording.formattedExactCreationDate)` |")
-        lines.append("| **Fecha y Hora de Finalización** | `\(recording.formattedExactEndDate)` |")
-        lines.append("| **Franja del Día** | \(recording.dayPeriod.rawValue) |")
-        lines.append("| **Duración Exacta** | `\(recording.formattedPreciseDuration)` |")
-        lines.append("| **Peso del Archivo** | `\(recording.formattedDetailedFileSize)` |")
-        lines.append("| **Formato y Calidad** | `\(recording.audioFormat.displayName)` · `\(Int(recording.sampleRate)) Hz` |")
+        lines.append("| **\(L10n.exportMDPropCreated)** | `\(recording.formattedExactCreationDate)` |")
+        lines.append("| **\(L10n.exportMDPropEnded)** | `\(recording.formattedExactEndDate)` |")
+        lines.append("| **\(L10n.exportMDPropPeriod)** | \(recording.dayPeriod.localizedTitle) |")
+        lines.append("| **\(L10n.exportMDPropDuration)** | `\(recording.formattedPreciseDuration)` |")
+        lines.append("| **\(L10n.exportMDPropSize)** | `\(recording.formattedDetailedFileSize)` |")
+        lines.append("| **\(L10n.exportMDPropFormat)** | `\(recording.audioFormat.displayName)` · `\(Int(recording.sampleRate)) Hz` |")
         if !recording.tags.isEmpty {
-            let tagNames = recording.tags.map(\.name).joined(separator: ", ")
-            lines.append("| **Etiquetas (Tags)** | \(tagNames) |")
+            let tagNames = recording.tags.map(\.localizedName).joined(separator: ", ")
+            lines.append("| **\(L10n.exportMDPropTags)** | \(tagNames) |")
         }
         lines.append("")
 
         if !recording.speakers.isEmpty {
-            lines.append("## 🗣️ Locutores Identificados (Speaker Diarization)")
+            lines.append(L10n.exportMDSpeakersHeading)
             for spk in recording.speakers {
                 let dur = ExactDateFormatter.standardDuration(spk.totalSpeakingDuration)
-                lines.append("- **\(spk.displayName)** (`\(spk.defaultLabel)`): \(dur) hablados · \(spk.wordCount) palabras · Pitch medio \(Int(spk.pitchMeanHz)) Hz")
+                lines.append(
+                    L10n.exportMDSpeakerLine(
+                        displayName: spk.displayName,
+                        defaultLabel: spk.localizedDefaultLabel,
+                        duration: dur,
+                        words: spk.wordCount,
+                        pitchHz: Int(spk.pitchMeanHz)
+                    )
+                )
             }
             lines.append("")
         }
 
         if !recording.bookmarks.isEmpty {
-            lines.append("## 🔖 Marcadores de Tiempo en Vivo")
+            lines.append(L10n.exportMDBookmarksHeading)
             for bm in recording.bookmarks {
                 let notePart = bm.note.isEmpty ? "" : " — *\(bm.note)*"
-                lines.append("- **[\(bm.formattedTimestamp)]** \(bm.label)\(notePart) *(Creado: \(bm.formattedCreatedAtExact))*")
+                lines.append("- **[\(bm.formattedTimestamp)]** \(bm.label)\(notePart) *(\(L10n.exportMDBookmarkCreated(bm.formattedCreatedAtExact)))*")
             }
             lines.append("")
         }
 
-        lines.append("## 📝 Transcripción Completa y Eventos Acústicos")
+        lines.append(L10n.exportMDTranscriptHeading)
         lines.append("")
 
         for segment in recording.segments {
@@ -163,9 +176,15 @@ enum ExportService {
 
         if !recording.acousticEvents.isEmpty {
             lines.append("---")
-            lines.append("## 🔊 Resumen de Eventos Acústicos Detectados (SoundAnalysis)")
+            lines.append(L10n.exportMDEventsHeading)
             for ev in recording.acousticEvents {
-                lines.append("- `\(ev.formattedInlineTag)` — Confianza: \(Int(ev.confidence * 100))% (Duración: \(String(format: "%.1fs", ev.duration)))")
+                lines.append(
+                    L10n.exportMDEventLine(
+                        tag: ev.formattedInlineTag,
+                        confidencePct: Int(ev.confidence * 100),
+                        durationText: String(format: "%.1f", ev.duration)
+                    )
+                )
             }
         }
 
@@ -178,38 +197,45 @@ enum ExportService {
         var lines: [String] = []
         let separator = String(repeating: "=", count: 68)
         lines.append(separator)
-        lines.append("VOICE NOTES - TRANSCRIPCIÓN E INFORME ACÚSTICO")
+        lines.append(L10n.exportTXTHeader)
         lines.append(separator)
-        lines.append("TÍTULO:              \(recording.title)")
-        lines.append("FECHA Y HORA EXACTA: \(recording.formattedExactCreationDate)")
-        lines.append("FINALIZACIÓN EXACTA: \(recording.formattedExactEndDate)")
-        lines.append("FRANJA HORARIA:      \(recording.dayPeriod.rawValue)")
-        lines.append("DURACIÓN EXACTA:     \(recording.formattedPreciseDuration)")
-        lines.append("PESO DEL ARCHIVO:    \(recording.formattedDetailedFileSize)")
-        lines.append("FORMATO DE AUDIO:    \(recording.audioFormat.displayName) (\(Int(recording.sampleRate)) Hz)")
+        lines.append("\(L10n.exportTXTTitle):              \(recording.title)")
+        lines.append("\(L10n.exportTXTCreated): \(recording.formattedExactCreationDate)")
+        lines.append("\(L10n.exportTXTEnded): \(recording.formattedExactEndDate)")
+        lines.append("\(L10n.exportTXTPeriod):      \(recording.dayPeriod.localizedTitle)")
+        lines.append("\(L10n.exportTXTDuration):     \(recording.formattedPreciseDuration)")
+        lines.append("\(L10n.exportTXTSize):    \(recording.formattedDetailedFileSize)")
+        lines.append("\(L10n.exportTXTFormat):    \(recording.audioFormat.displayName) (\(Int(recording.sampleRate)) Hz)")
         if !recording.tags.isEmpty {
-            lines.append("ETIQUETAS:           \(recording.tags.map(\.name).joined(separator: ", "))")
+            lines.append("\(L10n.exportTXTTags):           \(recording.tags.map(\.localizedName).joined(separator: ", "))")
         }
         lines.append(separator)
         lines.append("")
 
         if !recording.speakers.isEmpty {
-            lines.append("LOCUTORES IDENTIFICADOS:")
+            lines.append(L10n.exportTXTSpeakersHeader)
             for spk in recording.speakers {
-                lines.append("  • \(spk.displayName) (\(spk.defaultLabel)) - \(spk.wordCount) palabras (\(ExactDateFormatter.standardDuration(spk.totalSpeakingDuration)))")
+                lines.append(
+                    L10n.exportTXTSpeakerLine(
+                        displayName: spk.displayName,
+                        defaultLabel: spk.localizedDefaultLabel,
+                        words: spk.wordCount,
+                        duration: ExactDateFormatter.standardDuration(spk.totalSpeakingDuration)
+                    )
+                )
             }
             lines.append("")
         }
 
         if !recording.bookmarks.isEmpty {
-            lines.append("MARCADORES DE TIEMPO (BOOKMARKS):")
+            lines.append(L10n.exportTXTBookmarksHeader)
             for bm in recording.bookmarks {
                 lines.append("  • [\(bm.formattedTimestamp)] \(bm.label) \(bm.note.isEmpty ? "" : "- \(bm.note)")")
             }
             lines.append("")
         }
 
-        lines.append("TRANSCRIPCIÓN SINCRONIZADA:")
+        lines.append(L10n.exportTXTTranscriptHeader)
         lines.append(String(repeating: "-", count: 68))
 
         for segment in recording.segments {
@@ -269,7 +295,7 @@ enum ExportService {
 
             // Cabecera del PDF
             drawText(
-                "VOICE NOTES · INFORME DE TRANSCRIPCIÓN E IA ACÚSTICA",
+                L10n.exportPDFHeader,
                 font: .systemFont(ofSize: 10, weight: .bold),
                 color: Color.uiColor(fromHex: "#3B82F6"),
                 spacingAfter: 4
@@ -281,13 +307,17 @@ enum ExportService {
                 spacingAfter: 6
             )
             drawText(
-                "Fecha y Hora Exacta: \(recording.formattedExactCreationDate) (\(recording.dayPeriod.rawValue))",
+                L10n.exportPDFDatetime(date: recording.formattedExactCreationDate, period: recording.dayPeriod.localizedTitle),
                 font: .monospacedSystemFont(ofSize: 11, weight: .semibold),
                 color: Color.uiColor(fromHex: "#1E293B"),
                 spacingAfter: 4
             )
             drawText(
-                "Duración: \(recording.formattedPreciseDuration)   |   Peso: \(recording.formattedDetailedFileSize)   |   Formato: \(recording.audioFormat.shortBadge)",
+                L10n.exportPDFMetrics(
+                    duration: recording.formattedPreciseDuration,
+                    size: recording.formattedDetailedFileSize,
+                    formatBadge: recording.audioFormat.shortBadge
+                ),
                 font: .systemFont(ofSize: 10, weight: .medium),
                 color: .darkGray,
                 spacingAfter: 12
@@ -306,10 +336,16 @@ enum ExportService {
             // Locutores
             if !recording.speakers.isEmpty {
                 let speakerSummary = recording.speakers
-                    .map { "\($0.displayName) (\($0.wordCount) pal. · \(ExactDateFormatter.standardDuration($0.totalSpeakingDuration)))" }
+                    .map {
+                        L10n.exportPDFSpeakerItem(
+                            displayName: $0.displayName,
+                            words: $0.wordCount,
+                            duration: ExactDateFormatter.standardDuration($0.totalSpeakingDuration)
+                        )
+                    }
                     .joined(separator: "   •   ")
                 drawText(
-                    "Locutores detectados: \(speakerSummary)",
+                    L10n.exportPDFSpeakers(speakerSummary),
                     font: .systemFont(ofSize: 10.5, weight: .semibold),
                     color: Color.uiColor(fromHex: "#334155"),
                     spacingAfter: 14
@@ -319,7 +355,7 @@ enum ExportService {
             // Marcadores
             if !recording.bookmarks.isEmpty {
                 drawText(
-                    "Marcadores en Vivo (Bookmarks):",
+                    L10n.exportPDFBookmarks,
                     font: .systemFont(ofSize: 12, weight: .bold),
                     color: .black,
                     spacingAfter: 4
@@ -337,7 +373,7 @@ enum ExportService {
 
             // Segmentos de Transcripción
             drawText(
-                "Transcripción Sincronizada y Eventos Acústicos:",
+                L10n.exportPDFTranscript,
                 font: .systemFont(ofSize: 13, weight: .bold),
                 color: .black,
                 spacingAfter: 10
@@ -379,7 +415,7 @@ enum ExportService {
             .components(separatedBy: invalidCharacters)
             .joined()
             .replacingOccurrences(of: " ", with: "_")
-        return cleaned.isEmpty ? "Grabacion_VoiceNotes" : String(cleaned.prefix(42))
+        return cleaned.isEmpty ? L10n.exportFileFallback : String(cleaned.prefix(42))
     }
 
     private static func copyOrSynthesizeAudioIfNeeded(from sourceURL: URL, to destinationURL: URL, duration: TimeInterval) throws {

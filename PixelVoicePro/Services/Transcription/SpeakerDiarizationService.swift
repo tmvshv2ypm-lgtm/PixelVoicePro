@@ -418,7 +418,7 @@ final class SpeakerDiarizationService {
     private func makeSegment(from words: [WordTimestamp], speakerId: String) -> TranscriptSegment {
         let start = words.first?.startTime ?? 0
         let end = words.last?.endTime ?? start
-        let joinedText = words.map(\.word).joined(separator: " ")
+        let joinedText = L10n.smartJoinWords(words.map(\.word))
         return TranscriptSegment(
             speakerId: speakerId,
             startTime: start,

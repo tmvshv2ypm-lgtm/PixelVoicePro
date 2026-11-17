@@ -35,9 +35,9 @@ enum FolderDestination: Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .all: return "Todas"
-        case .favorites: return "Favoritas"
-        case .tag(let tag): return tag.name
+        case .all: return L10n.folderAll
+        case .favorites: return L10n.folderFavorites
+        case .tag(let tag): return tag.localizedName
         }
     }
 
@@ -126,7 +126,7 @@ final class AppViewModel: ObservableObject {
             let chronological = fetched.sorted { $0.createdAt < $1.createdAt }
             for (idx, rec) in chronological.enumerated() {
                 if rec.title.hasPrefix("Grabación de la ") || rec.title == "__AUTO_SEQUENTIAL_TITLE__" {
-                    rec.title = "Grabación \(idx + 1)"
+                    rec.title = L10n.recordingDefaultTitle(idx + 1)
                 }
                 RecordingStorageService.ensurePlayableAudioFileExists(for: rec)
             }
@@ -136,14 +136,18 @@ final class AppViewModel: ObservableObject {
     }
 
     func nextSequentialTitle() -> String {
+        let knownPrefixes = Array(Set([L10n.recordingTitlePrefixCheck, "Grabación ", "Recording "]))
         let maxExisting = recordings.compactMap { rec -> Int? in
-            let prefix = "Grabación "
-            guard rec.title.hasPrefix(prefix) else { return nil }
-            let suffix = rec.title.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
-            return Int(suffix)
+            for prefix in knownPrefixes where rec.title.hasPrefix(prefix) {
+                let suffix = rec.title.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+                if let parsed = Int(suffix) {
+                    return parsed
+                }
+            }
+            return nil
         }.max() ?? 0
         let nextNumber = max(recordings.count, maxExisting) + 1
-        return "Grabación \(nextNumber)"
+        return L10n.recordingDefaultTitle(nextNumber)
     }
 
     func insertNewRecording(_ recording: VoiceRecording, presentQuickTitleEditor: Bool = true) {
@@ -190,8 +194,11 @@ final class AppViewModel: ObservableObject {
 
     func createCustomTag(name: String, colorHex: String, iconName: String = "tag.fill") -> TagItem {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let candidateName = cleaned.isEmpty ? "Personalizada" : cleaned
-        if let existing = availableTags.first(where: { $0.name.lowercased() == candidateName.lowercased() }) {
+        let candidateName = cleaned.isEmpty ? L10n.tagCustomDefault : cleaned
+        if let existing = availableTags.first(where: {
+            $0.localizedName.lowercased() == candidateName.lowercased() ||
+            $0.name.lowercased() == candidateName.lowercased()
+        }) {
             if isDefaultTag(existing) && hiddenDefaultTagIDs.contains(existing.id) {
                 hiddenDefaultTagIDs.remove(existing.id)
                 saveHiddenDefaultTags()
@@ -266,7 +273,7 @@ final class AppViewModel: ObservableObject {
                 self.isBackgroundProcessingActive = true
                 self.backgroundProcessingTitle = job.recording.title
                 self.backgroundProcessingProgress = 0.08
-                self.backgroundProcessingStatus = "Preparando análisis en 2º plano..."
+                self.backgroundProcessingStatus = L10n.bgPreparing
                 self.activeBackgroundJobsCount = self.pendingBackgroundJobs.count + 1
 
                 await self.executeBackgroundJob(recording: job.recording, payload: job.payload)
@@ -306,13 +313,13 @@ final class AppViewModel: ObservableObject {
         ) = await Task.detached(priority: .utility) {
             await MainActor.run { [weak self] in
                 self?.backgroundProcessingProgress = 0.12
-                self?.backgroundProcessingStatus = "Analizando locutores (L1, L2, L3...)"
+                self?.backgroundProcessingStatus = L10n.bgAnalyzingSpeakers
             }
             diarizer.analyzeAudioFileOfflineIfNeeded(url: fileURL)
 
             await MainActor.run { [weak self] in
                 self?.backgroundProcessingProgress = 0.18
-                self?.backgroundProcessingStatus = "Detectando eventos acústicos y pausas..."
+                self?.backgroundProcessingStatus = L10n.bgDetectingEvents
             }
             if !skipOfflineSoundAnalysis {
                 await analyzer.analyzeCompleteAudioFileIfNeeded(at: fileURL)
@@ -336,7 +343,7 @@ final class AppViewModel: ObservableObject {
 
             await MainActor.run { [weak self] in
                 self?.backgroundProcessingProgress = 0.96
-                self?.backgroundProcessingStatus = "Verificando integridad SHA-256..."
+                self?.backgroundProcessingStatus = L10n.bgVerifyingSHA
             }
             let fileSize = AudioRecorderService.queryFileSizeBytes(at: fileURL)
             let sha256 = AudioRecorderService.computeSHA256Streaming(at: fileURL)

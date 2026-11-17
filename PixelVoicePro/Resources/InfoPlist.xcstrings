@@ -1,0 +1,424 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSMicrophoneUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes needs access to the microphone to record your voice notes in high fidelity, analyze acoustic events live, and continue recording in the background."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes necesita acceso al micrófono para grabar tus notas de voz en alta fidelidad, analizar eventos acústicos en vivo y continuar grabando en segundo plano."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Voice Notes precisa de acesso ao microfone para gravar suas notas de voz em alta fidelidade, analisar eventos acústicos ao vivo e continuar gravando em segundo plano."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Voice Notes precisa de acesso ao microfone para gravar as suas notas de voz em alta fidelidade, analisar eventos acústicos em direto e continuar a gravar em segundo plano."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приложению Voice Notes требуется доступ к микрофону для записи голосовых заметок в высоком качестве, анализа акустических событий в реальном времени и продолжения записи в фоновом режиме."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes는 고음질로 음성 메모를 녹음하고, 실시간으로 음향 이벤트를 분석하며, 백그라운드에서 계속 녹음하기 위해 마이크 접근 권한이 필요합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes 需要访问麦克风以高保真录制语音备忘录、实时分析声音事件并在后台继续录音。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes 需要取用麥克風，以高保真錄製語音備忘錄、即時分析聲音事件並在背景繼續錄音。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notesは、高音質で音声メモを録音し、音響イベントをリアルタイムで分析し、バックグラウンドで録音を継続するためにマイクへのアクセスが必要です。"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes a besoin d'accéder au microphone pour enregistrer vos notes vocales en haute fidélité, analyser les événements acoustiques en direct et poursuivre l'enregistrement en arrière-plan."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes benötigt Zugriff auf das Mikrofon, um Sprachnotizen in hoher Qualität aufzunehmen, akustische Ereignisse live zu analysieren und im Hintergrund weiter aufzunehmen."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes necessita dell'accesso al microfono per registrare note vocali ad alta fedeltà, analizzare gli eventi acustici dal vivo e continuare a registrare in background."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يحتاج تطبيق Voice Notes إلى الوصول إلى الميكروفون لتسجيل ملاحظاتك الصوتية بدقة عالية وتحليل الأحداث الصوتية مباشرة ومواصلة التسجيل في الخلفية."
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes को उच्च गुणवत्ता में वॉइस नोट्स रिकॉर्ड करने, ध्वनि घटनाओं का लाइव विश्लेषण करने और बैकग्राउंड में रिकॉर्डिंग जारी रखने के लिए माइक्रोफ़ोन की अनुमति चाहिए।"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes, sesli notlarınızı yüksek kalitede kaydetmek, akustik olayları canlı analiz etmek ve arka planda kayda devam etmek için mikrofona erişim gerektirir."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes heeft toegang tot de microfoon nodig om je spraakmemo's in hoge kwaliteit op te nemen, akoestische gebeurtenissen live te analyseren en op de achtergrond door te gaan."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes potrzebuje dostępu do mikrofonu, aby nagrywać notatki głosowe w wysokiej jakości, analizować zdarzenia akustyczne na żywo i kontynuować nagrywanie w tle."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes потрібен доступ до мікрофона для запису голосових нотаток у високій якості, аналізу акустичних подій наживо та продовження запису у фоновому режимі."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes memerlukan akses mikrofon untuk merekam catatan suara dengan fidelitas tinggi, menganalisis peristiwa akustik secara langsung, dan melanjutkan perekaman di latar belakang."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes cần quyền truy cập micro để ghi âm ghi chú giọng nói chất lượng cao, phân tích sự kiện âm thanh trực tiếp và tiếp tục ghi âm trong nền."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes ต้องการสิทธิ์เข้าถึงไมโครโฟนเพื่อบันทึกโน้ตเสียงคุณภาพสูง วิเคราะห์เหตุการณ์เสียงแบบเรียลไทม์ และบันทึกต่อในพื้นหลัง"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes behöver åtkomst till mikrofonen för att spela in röstanteckningar i hög kvalitet, analysera akustiska händelser live och fortsätta spela in i bakgrunden."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes skal have adgang til mikrofonen for at optage stemmenoter i høj kvalitet, analysere akustiske hændelser live og fortsætte optagelsen i baggrunden."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes trenger tilgang til mikrofonen for å ta opp talenotater i høy kvalitet, analysere akustiske hendelser direkte og fortsette opptaket i bakgrunnen."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes tarvitsee pääsyn mikrofoniin äänimuistioiden tallentamiseen korkealaatuisena, äänitapahtumien reaaliaikaiseen analyysiin ja taustatallennukseen."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Το Voice Notes χρειάζεται πρόσβαση στο μικρόφωνο για να εγγράφει φωνητικές σημειώσεις υψηλής πιστότητας, να αναλύει ακουστικά συμβάντα ζωντανά και να συνεχίζει την εγγραφή στο παρασκήνιο."
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes זקוק לגישה למיקרופון כדי להקליט הערות קוליות באיכות גבוהה, לנתח אירועים אקוסטיים בזמן אמת ולהמשיך להקליט ברקע."
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes potřebuje přístup k mikrofonu pro nahrávání hlasových poznámek ve vysoké kvalitě, živou analýzu akustických událostí a pokračování v nahrávání na pozadí."
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes are nevoie de acces la microfon pentru a înregistra notele vocale la calitate înaltă, a analiza evenimentele acustice în direct și a continua înregistrarea în fundal."
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Voice Notesnak mikrofon-hozzáférésre van szüksége a hangjegyzetek kiváló minőségű rögzítéséhez, az akusztikus események élő elemzéséhez és a háttérben történő felvételhez."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes memerlukan akses mikrofon untuk merakam nota suara dengan kejelasan tinggi, menganalisis acara akustik secara langsung dan meneruskan rakaman di latar belakang."
+          }
+        },
+        "ca": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes necessita accés al micròfon per gravar les teves notes de veu en alta fidelitat, analitzar esdeveniments acústics en directe i continuar gravant en segon pla."
+          }
+        },
+        "hr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes treba pristup mikrofonu za snimanje glasovnih bilješki u visokoj kvaliteti, analizu zvučnih događaja uživo i nastavak snimanja u pozadini."
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes potrebuje prístup k mikrofónu na nahrávanie hlasových poznámok vo vysokej kvalite, živú analýzu akustických udalostí a pokračovanie v nahrávaní na pozadí."
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes uses advanced speech recognition to transcribe your recordings in real time, sync every word with audio, and separate speakers."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes utiliza reconocimiento de voz avanzado para transcribir tus grabaciones en tiempo real, sincronizar cada palabra con el audio y separar a los locutores."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Voice Notes usa reconhecimento de fala avançado para transcrever suas gravações em tempo real, sincronizar cada palavra com o áudio e separar os falantes."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Voice Notes utiliza reconhecimento de voz avançado para transcrever as suas gravações em tempo real, sincronizar cada palavra com o áudio e separar os oradores."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes использует передовое распознавание речи для транскрибации записей в реальном времени, синхронизации каждого слова со звуком и разделения спикеров."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes는 고급 음성 인식을 사용하여 녹음을 실시간으로 받아쓰고, 모든 단어를 오디오와 동기화하며, 화자를 구분합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes 使用先进的语音识别技术实时转录您的录音、将每个词与音频同步并区分说话人。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes 使用先進的語音辨識技術即時轉錄您的錄音、將每個字詞與音訊同步並區分說話者。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notesは高度な音声認識を使用して録音をリアルタイムで文字起こしし、すべての単語を音声と同期して話者を識別します。"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes utilise la reconnaissance vocale avancée pour transcrire vos enregistrements en temps réel, synchroniser chaque mot avec l'audio et séparer les intervenants."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes nutzt fortschrittliche Spracherkennung, um Ihre Aufnahmen in Echtzeit zu transkribieren, jedes Wort mit dem Audio zu synchronisieren und Sprecher zu trennen."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes utilizza il riconoscimento vocale avanzato per trascrivere le registrazioni in tempo reale, sincronizzare ogni parola con l'audio e separare i parlanti."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يستخدم Voice Notes تقنية متقدمة للتعرف على الكلام لنسخ تسجيلاتك فورياً ومزامنة كل كلمة مع الصوت وفصل المتحدثين."
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes आपकी रिकॉर्डिंग को रियल टाइम में ट्रांसक्राइब करने, हर शब्द को ऑडियो से सिंक करने और वक्ताओं को अलग करने के लिए उन्नत वाक् पहचान का उपयोग करता है।"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes, kayıtlarınızı gerçek zamanlı yazıya dökmek, her kelimeyi sesle senkronize etmek ve konuşmacıları ayırmak için gelişmiş konuşma tanıma kullanır."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes gebruikt geavanceerde spraakherkenning om je opnamen in realtime te transcriberen, elk woord met audio te synchroniseren en sprekers te scheiden."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes używa zaawansowanego rozpoznawania mowy do transkrypcji nagrań w czasie rzeczywistym, synchronizacji słów z dźwiękiem i rozdzielania mówców."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes використовує передове розпізнавання мовлення для транскрибування записів у реальному часі, синхронізації кожного слова з аудіо та розділення спікерів."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes menggunakan pengenalan suara canggih untuk menyalin rekaman secara real-time, menyinkronkan setiap kata dengan audio, dan memisahkan pembicara."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes sử dụng công nghệ nhận dạng giọng nói tiên tiến để chép lời theo thời gian thực, đồng bộ từng từ với âm thanh và phân tách người nói."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes ใช้การรู้จำเสียงพูดขั้นสูงเพื่อถอดเสียงแบบเรียลไทม์ ซิงค์ทุกคำกับเสียง และแยกผู้พูดแต่ละคน"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes använder avancerad taligenkänning för att transkribera dina inspelningar i realtid, synkronisera varje ord med ljudet och skilja talare åt."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes bruger avanceret talegenkendelse til at transskribere dine optagelser i realtid, synkronisere hvert ord med lyden og adskille talere."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes bruker avansert talegjenkjenning for å transkribere opptakene dine i sanntid, synkronisere hvert ord med lyden og skille talere."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes käyttää edistynyttä puheentunnistusta äänitysten litterointiin reaaliajassa, jokaisen sanan synkronointiin äänen kanssa ja puhujien erotteluun."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Το Voice Notes χρησιμοποιεί προηγμένη αναγνώριση ομιλίας για μεταγραφή σε πραγματικό χρόνο, συγχρονισμό κάθε λέξης με τον ήχο και διαχωρισμό ομιλητών."
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes משתמש בזיהוי דיבור מתקדם כדי לתמלל הקלטות בזמן אמת, לסנכרן כל מילה עם השמע ולהפריד בין דוברים."
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes používá pokročilé rozpoznávání řeči k přepisu nahrávek v reálném čase, synchronizaci každého slova se zvukem a rozlišení mluvčích."
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes folosește recunoașterea avansată a vorbirii pentru a transcrie înregistrările în timp real, a sincroniza fiecare cuvânt cu sunetul și a separa vorbitorii."
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Voice Notes fejlett beszédfelismerést használ a felvételek valós idejű átírásához, minden szó hanggal való szinkronizálásához és a beszélők elkülönítéséhez."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes menggunakan pengecaman pertuturan lanjutan untuk mentranskripsikan rakaman anda secara masa nyata, menyegerakkan setiap perkataan dengan audio dan memisahkan penutur."
+          }
+        },
+        "ca": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes utilitza reconeixement de veu avançat per transcriure les gravacions en temps real, sincronitzar cada paraula amb l'àudio i separar els locutors."
+          }
+        },
+        "hr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes koristi napredno prepoznavanje govora za transkripciju snimki u stvarnom vremenu, sinkronizaciju svake riječi sa zvukom i odvajanje govornika."
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Notes používa pokročilé rozpoznávanie reči na prepis nahrávok v reálnom čase, synchronizáciu každého slova so zvukom a rozlíšenie hovoriacich."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

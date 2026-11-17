@@ -4,7 +4,9 @@ import AVFoundation
 
 /// Configuración del motor híbrido de transcripción (Apple Speech en vivo + Post-procesamiento por fragmentos de 45s + Whisper API).
 struct TranscriptionConfiguration: Codable {
-    var localeIdentifier: String = "es-ES"
+    static let automaticLocaleIdentifier = "auto"
+
+    var localeIdentifier: String = TranscriptionConfiguration.automaticLocaleIdentifier
     var preferOnDeviceRecognition: Bool = true
     var enableWhisperPostProcessing: Bool = false
     var whisperEndpointURL: String = "https://api.openai.com/v1/audio/transcriptions"
@@ -12,11 +14,21 @@ struct TranscriptionConfiguration: Codable {
     var whisperModelName: String = "whisper-1"
 
     static let storageKey = "com.pixelvoicepro.transcription.config"
+    private static let autoLocaleMigrationKey = "com.pixelvoicepro.transcription.migratedAutoLocale.v1"
 
     static func load() -> TranscriptionConfiguration {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode(TranscriptionConfiguration.self, from: data) else {
+              var decoded = try? JSONDecoder().decode(TranscriptionConfiguration.self, from: data) else {
+            UserDefaults.standard.set(true, forKey: autoLocaleMigrationKey)
             return TranscriptionConfiguration()
+        }
+        // Migrar una sola vez configuraciones antiguas fijadas en "es-ES" al modo automático según el idioma del iPhone
+        if !UserDefaults.standard.bool(forKey: autoLocaleMigrationKey) {
+            UserDefaults.standard.set(true, forKey: autoLocaleMigrationKey)
+            if decoded.localeIdentifier == "es-ES" {
+                decoded.localeIdentifier = automaticLocaleIdentifier
+                decoded.save()
+            }
         }
         return decoded
     }
@@ -28,12 +40,13 @@ struct TranscriptionConfiguration: Codable {
     }
 }
 
-/// Servicio de Transcripción Inteligente en Español con sincronización palabra por palabra (`WordTimestamp`),
-/// modo de ahorro de batería plegable en vivo y pipeline de post-procesamiento completo por fragmentos seguros de 45 segundos.
+/// Servicio de Transcripción Inteligente Multi-idioma con sincronización palabra por palabra (`WordTimestamp`),
+/// detección automática del idioma del dispositivo, modo ahorro plegable y pipeline de 45 segundos.
 final class SpeechTranscriptionService {
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+    private(set) var activeLocale: Locale = Locale.current
 
     /// Palabras consolidadas de sesiones previas
     private var committedWords: [WordTimestamp] = []
@@ -51,15 +64,139 @@ final class SpeechTranscriptionService {
         configureRecognizer(localeIdentifier: configuration.localeIdentifier)
     }
 
+    /// Resuelve un identificador configurado (`"auto"` o código BCP-47) al `Locale` compatible con `SFSpeechRecognizer`.
+    static func resolveRecognitionLocale(for configuredId: String) -> Locale {
+        let supported = SFSpeechRecognizer.supportedLocales()
+        if configuredId != TranscriptionConfiguration.automaticLocaleIdentifier {
+            if let matched = matchSupportedLocale(for: configuredId, in: supported) {
+                return matched
+            }
+            return Locale(identifier: configuredId)
+        }
+
+        for preferred in Locale.preferredLanguages {
+            if let matched = matchSupportedLocale(for: preferred, in: supported) {
+                return matched
+            }
+        }
+
+        if let systemDefault = SFSpeechRecognizer()?.locale {
+            return systemDefault
+        }
+        return Locale.current
+    }
+
+    static func activeLanguageDisplayName(for configuredId: String = TranscriptionConfiguration.load().localeIdentifier) -> String {
+        let resolved = resolveRecognitionLocale(for: configuredId)
+        return localizedDisplayName(for: resolved)
+    }
+
+    static func localizedDisplayName(for locale: Locale) -> String {
+        let normalized = locale.identifier.replacingOccurrences(of: "_", with: "-")
+        return Locale.current.localizedString(forIdentifier: normalized)?.localizedCapitalized ?? normalized
+    }
+
+    static func availableSpeechLocaleOptions() -> [(id: String, name: String)] {
+        var seen: Set<String> = []
+        var options: [(id: String, name: String)] = []
+        for loc in SFSpeechRecognizer.supportedLocales() {
+            let normId = loc.identifier.replacingOccurrences(of: "_", with: "-")
+            guard !seen.contains(normId) else { continue }
+            seen.insert(normId)
+            options.append((id: normId, name: localizedDisplayName(for: loc)))
+        }
+        return options.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private static func matchSupportedLocale(for identifier: String, in supported: Set<Locale>) -> Locale? {
+        guard !supported.isEmpty else { return nil }
+        let normInput = identifier.replacingOccurrences(of: "_", with: "-").lowercased()
+
+        // 1. Coincidencia exacta
+        if let exact = supported.first(where: { $0.identifier.replacingOccurrences(of: "_", with: "-").lowercased() == normInput }) {
+            return exact
+        }
+
+        let parsed = Locale(identifier: identifier)
+        let langCode = parsed.language.languageCode?.identifier.lowercased()
+            ?? normInput.split(separator: "-").first.map(String.init)
+            ?? ""
+        let scriptCode = parsed.language.script?.identifier
+        let regionCode = parsed.region?.identifier.uppercased()
+
+        guard !langCode.isEmpty else { return nil }
+
+        // 2. Mapeo específico de Chino (zh-Hans -> zh-CN / zh-SG, zh-Hant -> zh-TW / zh-HK)
+        if langCode == "zh" {
+            let preferredChineseIDs: [String]
+            if scriptCode == "Hant" || regionCode == "TW" || regionCode == "HK" || regionCode == "MO" {
+                preferredChineseIDs = (regionCode == "HK" || regionCode == "MO")
+                    ? ["zh-hk", "zh-tw", "zh-cn"]
+                    : ["zh-tw", "zh-hk", "zh-cn"]
+            } else {
+                preferredChineseIDs = ["zh-cn", "zh-sg", "zh-tw", "zh-hk"]
+            }
+            for candidate in preferredChineseIDs {
+                if let match = supported.first(where: { $0.identifier.replacingOccurrences(of: "_", with: "-").lowercased() == candidate }) {
+                    return match
+                }
+            }
+        }
+
+        // 3. Coincidencia por idioma + región
+        if let regionCode {
+            if let langRegionMatch = supported.first(where: { loc in
+                let locLang = loc.language.languageCode?.identifier.lowercased()
+                let locReg = loc.region?.identifier.uppercased()
+                return locLang == langCode && locReg == regionCode
+            }) {
+                return langRegionMatch
+            }
+        }
+
+        // 4. Preferencias regionales naturales cuando el iPhone usa una región sin modelo propio
+        let preferredFallbacksByLanguage: [String: [String]] = [
+            "en": ["en-us", "en-gb"],
+            "es": ["es-419", "es-es", "es-us", "es-mx"],
+            "pt": ["pt-br", "pt-pt"],
+            "fr": ["fr-fr", "fr-ca"],
+            "de": ["de-de"],
+            "it": ["it-it"],
+            "ru": ["ru-ru"],
+            "ko": ["ko-kr"],
+            "ja": ["ja-jp"],
+            "ar": ["ar-sa"],
+            "hi": ["hi-in"],
+            "uk": ["uk-ua"],
+            "tr": ["tr-tr"],
+            "nl": ["nl-nl"],
+            "pl": ["pl-pl"]
+        ]
+        if let defaults = preferredFallbacksByLanguage[langCode] {
+            for candidate in defaults {
+                if let match = supported.first(where: { $0.identifier.replacingOccurrences(of: "_", with: "-").lowercased() == candidate }) {
+                    return match
+                }
+            }
+        }
+
+        // 5. Cualquier locale soportado con el mismo código de idioma
+        return supported
+            .filter { $0.language.languageCode?.identifier.lowercased() == langCode }
+            .sorted { $0.identifier < $1.identifier }
+            .first
+    }
+
     func configureRecognizer(localeIdentifier: String) {
-        if let primary = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier)) {
-            speechRecognizer = primary
-        } else if let fallbackES = SFSpeechRecognizer(locale: Locale(identifier: "es-419")) {
-            speechRecognizer = fallbackES
-        } else if let fallbackSpain = SFSpeechRecognizer(locale: Locale(identifier: "es-ES")) {
-            speechRecognizer = fallbackSpain
+        let resolved = Self.resolveRecognitionLocale(for: localeIdentifier)
+        activeLocale = resolved
+        if let recognizer = SFSpeechRecognizer(locale: resolved) {
+            speechRecognizer = recognizer
+        } else if let defaultRecognizer = SFSpeechRecognizer() {
+            speechRecognizer = defaultRecognizer
+            activeLocale = defaultRecognizer.locale
         } else {
-            speechRecognizer = SFSpeechRecognizer()
+            speechRecognizer = nil
         }
     }
 
@@ -192,8 +329,16 @@ final class SpeechTranscriptionService {
         acousticEvents: [AcousticEvent],
         onProgress: (@MainActor (Double, String) -> Void)? = nil
     ) async -> (segments: [TranscriptSegment], engineDescription: String) {
+        configuration = .load()
+        configureRecognizer(localeIdentifier: configuration.localeIdentifier)
+
         var finalWords = existingWords
-        var engineLabel = "Apple Speech On-Device (es) + PixelVoice 45s Chunk Pipeline"
+        let activeLocaleId = activeLocale.identifier.replacingOccurrences(of: "_", with: "-")
+        let supportsOnDevice = speechRecognizer?.supportsOnDeviceRecognition ?? false
+        var engineLabel = L10n.speechEngineApple(
+            activeLocaleId,
+            onDevice: configuration.preferOnDeviceRecognition && supportsOnDevice
+        )
 
         // Determinar cuánto de la grabación ya fue cubierto en vivo vs cuánto falta transcribir del archivo completo
         let lastCoveredSecond = existingWords.last?.endTime ?? 0.0
@@ -206,7 +351,7 @@ final class SpeechTranscriptionService {
             finalWords = whisperWords
             engineLabel = "Whisper AI (\(configuration.whisperModelName)) + PixelVoice DSP Diarizer"
         } else if needsFullFileChunkAnalysis {
-            await onProgress?(0.20, "Dividiendo audio en fragmentos seguros de 45s para transcripción completa...")
+            await onProgress?(0.20, L10n.speechSplitting45s)
             let chunkedWords = await transcribeAudioFileIn45sChunks(
                 url: audioFileURL,
                 totalDuration: totalDuration,
@@ -218,13 +363,13 @@ final class SpeechTranscriptionService {
             }
         }
 
-        await onProgress?(0.92, "Alineando locutores, signos de puntuación y eventos acústicos...")
-        let refinedWords = refineSpanishCapitalizationAndPunctuation(words: finalWords)
+        await onProgress?(0.92, L10n.speechAligning)
+        let refinedWords = refineCapitalizationAndPunctuation(words: finalWords, locale: activeLocale)
         let segments = diarizer.buildSpeakerSegments(
             words: refinedWords,
             acousticEvents: acousticEvents
         )
-        await onProgress?(1.0, "¡Procesamiento completado!")
+        await onProgress?(1.0, L10n.speechCompleted)
         return (segments, engineLabel)
     }
 
@@ -267,7 +412,11 @@ final class SpeechTranscriptionService {
             let progressBase = 0.22 + (0.68 * (Double(chunkIndex) / Double(totalChunks)))
             await onProgress?(
                 progressBase,
-                "Transcribiendo fragmento \(chunkIndex + 1) de \(totalChunks) (\(ExactDateFormatter.standardDuration(chunkStartTimeOffset)))..."
+                L10n.speechTranscribingChunk(
+                    current: chunkIndex + 1,
+                    total: totalChunks,
+                    startTime: ExactDateFormatter.standardDuration(chunkStartTimeOffset)
+                )
             )
 
             // Extraer el fragmento de 45s a un archivo temporal .wav ligero para SFSpeechURLRecognitionRequest
@@ -435,7 +584,11 @@ final class SpeechTranscriptionService {
         }
 
         appendField(name: "model", value: configuration.whisperModelName)
-        appendField(name: "language", value: "es")
+        if configuration.localeIdentifier != TranscriptionConfiguration.automaticLocaleIdentifier,
+           let langCode = activeLocale.language.languageCode?.identifier,
+           !langCode.isEmpty {
+            appendField(name: "language", value: langCode)
+        }
         appendField(name: "response_format", value: "verbose_json")
         appendField(name: "timestamp_granularities[]", value: "word")
 
@@ -479,28 +632,34 @@ final class SpeechTranscriptionService {
         }
     }
 
-    private func refineSpanishCapitalizationAndPunctuation(words: [WordTimestamp]) -> [WordTimestamp] {
+    private func refineCapitalizationAndPunctuation(words: [WordTimestamp], locale: Locale) -> [WordTimestamp] {
         guard !words.isEmpty else { return [] }
         var refined = words
+        let langCode = locale.language.languageCode?.identifier.lowercased() ?? ""
+        let cjkEndPunctuationLanguages: Set<String> = ["zh", "ja"]
+        let skipForcedPeriodLanguages: Set<String> = ["th"]
+        let sentenceTerminators: Set<Character> = [".", "?", "!", "。", "？", "！", "…"]
+        let allTrailingPunctuation: Set<Character> = [".", "?", "!", ",", ";", ":", "。", "？", "！", "，", "、", "：", "；", "…"]
 
         for i in refined.indices {
             var currentWord = refined[i].word
             let isFirstWord = (i == 0)
             let isSpeakerChange = (i > 0 && refined[i].speakerId != refined[i - 1].speakerId)
-            let isAfterSentenceEnd = (i > 0 && (refined[i - 1].word.hasSuffix(".") || refined[i - 1].word.hasSuffix("?") || refined[i - 1].word.hasSuffix("!")))
+            let isAfterSentenceEnd = (i > 0 && refined[i - 1].word.last.map { sentenceTerminators.contains($0) } == true)
             let isAfterLongGap = (i > 0 && (refined[i].startTime - refined[i - 1].endTime) >= 1.6)
 
             if isFirstWord || isSpeakerChange || isAfterSentenceEnd || isAfterLongGap {
                 if let firstChar = currentWord.first {
-                    currentWord = String(firstChar).uppercased() + currentWord.dropFirst()
+                    currentWord = String(firstChar).uppercased(with: locale) + currentWord.dropFirst()
                 }
             }
 
             let isLastOfTurn = (i == refined.count - 1) || (refined[i + 1].speakerId != refined[i].speakerId)
             if isLastOfTurn,
+               !skipForcedPeriodLanguages.contains(langCode),
                let lastChar = currentWord.last,
-               ![Character("."), Character("?"), Character("!"), Character(","), Character(";"), Character(":")].contains(lastChar) {
-                currentWord.append(".")
+               !allTrailingPunctuation.contains(lastChar) {
+                currentWord.append(cjkEndPunctuationLanguages.contains(langCode) ? "。" : ".")
             }
 
             refined[i].word = currentWord

@@ -341,7 +341,7 @@ final class VoiceRecording {
         let newBookmark = RecordingBookmark(
             timestamp: max(0, min(duration, timestamp)),
             label: label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? "Marcador \(current.count + 1)"
+                ? L10n.bookmarkDefaultNumbered(current.count + 1)
                 : label,
             note: note,
             createdAt: Date()
@@ -362,14 +362,15 @@ final class VoiceRecording {
     func searchLocalOccurrences(query: String) -> [LocalWordSearchHit] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        let normalizedQuery = trimmed.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES"))
+        let searchLocale = Locale.current
+        let normalizedQuery = trimmed.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: searchLocale)
 
         var hits: [LocalWordSearchHit] = []
         for segment in segments {
             // Buscar primero en palabras con timestamp exacto
             var matchedInWords = false
             for wordItem in segment.words {
-                let normalizedWord = wordItem.word.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES"))
+                let normalizedWord = wordItem.word.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: searchLocale)
                 if normalizedWord.contains(normalizedQuery) {
                     hits.append(
                         LocalWordSearchHit(
@@ -387,7 +388,7 @@ final class VoiceRecording {
 
             // Si la búsqueda es una frase de varias palabras dentro del segmento
             if !matchedInWords {
-                let normalizedSegment = segment.text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES"))
+                let normalizedSegment = segment.text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: searchLocale)
                 if normalizedSegment.contains(normalizedQuery) {
                     hits.append(
                         LocalWordSearchHit(
@@ -409,7 +410,8 @@ final class VoiceRecording {
     func evaluateGlobalSearchMatches(query: String) -> [GlobalSearchMatch] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        let normalizedQuery = trimmed.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES"))
+        let searchLocale = Locale.current
+        let normalizedQuery = trimmed.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: searchLocale)
 
         var results: [GlobalSearchMatch] = []
 
@@ -432,7 +434,7 @@ final class VoiceRecording {
 
         // 2. Coincidencias en Marcadores en vivo (Bookmarks)
         for bookmark in bookmarks {
-            let combined = "\(bookmark.label) \(bookmark.note)".folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES"))
+            let combined = "\(bookmark.label) \(bookmark.note)".folding(options: [.diacriticInsensitive, .caseInsensitive], locale: searchLocale)
             if combined.contains(normalizedQuery) {
                 results.append(
                     GlobalSearchMatch(
@@ -441,7 +443,7 @@ final class VoiceRecording {
                         recordingExactDate: formattedExactCreationDate,
                         matchSource: .bookmark,
                         matchedText: bookmark.label,
-                        contextSnippet: bookmark.note.isEmpty ? "Marcador en \(bookmark.formattedTimestamp)" : bookmark.note,
+                        contextSnippet: bookmark.note.isEmpty ? L10n.bookmarkAtTimestamp(bookmark.formattedTimestamp) : bookmark.note,
                         timestamp: bookmark.timestamp,
                         speakerName: nil
                     )
@@ -449,9 +451,9 @@ final class VoiceRecording {
             }
         }
 
-        // 3. Coincidencias en Eventos Acústicos (ej. buscar "risas", "música", "aplausos")
+        // 3. Coincidencias en Eventos Acústicos
         for event in acousticEvents {
-            let normalizedEvent = event.type.spanishTitle.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES"))
+            let normalizedEvent = event.type.localizedTitle.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: searchLocale)
             if normalizedEvent.contains(normalizedQuery) {
                 results.append(
                     GlobalSearchMatch(
@@ -460,7 +462,7 @@ final class VoiceRecording {
                         recordingExactDate: formattedExactCreationDate,
                         matchSource: .acousticEvent,
                         matchedText: event.formattedInlineTag,
-                        contextSnippet: "Evento acústico detectado con \(Int(event.confidence * 100))% de confianza",
+                        contextSnippet: L10n.searchEventConfidence(Int(event.confidence * 100)),
                         timestamp: event.timestamp,
                         speakerName: nil
                     )
@@ -469,12 +471,13 @@ final class VoiceRecording {
         }
 
         // 4. Coincidencias en Título o Etiquetas si aún no hay coincidencias o como resultado adicional
-        let normalizedTitle = title.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES"))
+        let normalizedTitle = title.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: searchLocale)
         let matchingTags = tags.filter {
-            $0.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES")).contains(normalizedQuery)
+            $0.localizedName.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: searchLocale).contains(normalizedQuery) ||
+            $0.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: searchLocale).contains(normalizedQuery)
         }
         if normalizedTitle.contains(normalizedQuery) || !matchingTags.isEmpty {
-            let tagNames = matchingTags.map(\.name).joined(separator: ", ")
+            let tagNames = matchingTags.map(\.localizedName).joined(separator: ", ")
             results.append(
                 GlobalSearchMatch(
                     recordingId: id,
@@ -482,7 +485,7 @@ final class VoiceRecording {
                     recordingExactDate: formattedExactCreationDate,
                     matchSource: .titleOrTag,
                     matchedText: matchingTags.isEmpty ? title : tagNames,
-                    contextSnippet: fullTranscriptText.isEmpty ? "Grabación del \(formattedExactCreationDate)" : String(fullTranscriptText.prefix(140)),
+                    contextSnippet: fullTranscriptText.isEmpty ? L10n.recordingDateFallback(formattedExactCreationDate) : String(fullTranscriptText.prefix(140)),
                     timestamp: 0,
                     speakerName: speakers.first?.displayName
                 )

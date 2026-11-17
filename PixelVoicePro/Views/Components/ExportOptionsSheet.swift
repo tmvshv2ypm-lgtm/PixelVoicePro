@@ -32,16 +32,16 @@ struct ExportOptionsSheet: View {
                         Text(recording.formattedExactCreationDate)
                             .font(.system(.caption, design: .monospaced).weight(.semibold))
                             .foregroundStyle(PixelTheme.accentBlue)
-                        Text("Duración: \(recording.formattedPreciseDuration) · Peso: \(recording.formattedFileSize) · \(recording.speakers.count) locutor(es)")
+                        Text(L10n.exportSummaryLine(duration: recording.formattedPreciseDuration, size: recording.formattedFileSize, speakersCount: recording.speakers.count))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
                 } header: {
-                    Text("Resumen de Grabación a Exportar")
+                    Text(L10n.exportSummaryHeader)
                 }
 
-                Section("Selecciona el Formato de Exportación") {
+                Section(L10n.exportFormatHeader) {
                     ForEach(ExportFormatSelection.allCases) { option in
                         Button {
                             selectedOption = option
@@ -53,7 +53,7 @@ struct ExportOptionsSheet: View {
                                     .frame(width: 28)
 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(option.rawValue)
+                                    Text(option.localizedTitle)
                                         .font(.subheadline.weight(.bold))
                                         .foregroundStyle(.primary)
                                     Text(option.subtitle)
@@ -76,7 +76,7 @@ struct ExportOptionsSheet: View {
                 }
 
                 if selectedOption == .transcriptMarkdown || selectedOption == .transcriptPlainText {
-                    Section("Vista Previa del Documento Generado") {
+                    Section(L10n.exportPreviewHeader) {
                         ScrollView {
                             Text(
                                 selectedOption == .transcriptMarkdown
@@ -100,11 +100,11 @@ struct ExportOptionsSheet: View {
                     }
                 }
             }
-            .navigationTitle("Exportar y Compartir")
+            .navigationTitle(L10n.exportNavTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") {
+                    Button(L10n.close) {
                         dismiss()
                     }
                 }
@@ -112,7 +112,7 @@ struct ExportOptionsSheet: View {
                     Button {
                         prepareAndShare()
                     } label: {
-                        Label("Compartir Ahora", systemImage: "square.and.arrow.up")
+                        Label(L10n.exportShareNow, systemImage: "square.and.arrow.up")
                             .fontWeight(.bold)
                     }
                 }
@@ -135,7 +135,7 @@ struct ExportOptionsSheet: View {
             errorMessage = nil
             isPresentingSystemShareSheet = true
         } catch {
-            errorMessage = "No se pudo generar el paquete de exportación: \(error.localizedDescription)"
+            errorMessage = L10n.exportError(error.localizedDescription)
         }
     }
 }

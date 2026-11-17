@@ -184,7 +184,11 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
             DispatchQueue.main.async {
                 eventHandler?(event)
                 statusHandler?(
-                    "\(event.type.emoji) \(event.type.spanishTitle) detectado (\(Int(event.confidence * 100))%)",
+                    L10n.eventDetected(
+                        emoji: event.type.emoji,
+                        title: event.type.localizedTitle,
+                        confidencePct: Int(event.confidence * 100)
+                    ),
                     event.type
                 )
             }

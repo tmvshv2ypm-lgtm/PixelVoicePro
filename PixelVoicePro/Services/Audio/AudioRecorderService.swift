@@ -45,10 +45,10 @@ final class AudioRecorderService: ObservableObject {
 
     /// Estado de progreso del post-procesamiento completo al finalizar
     @Published private(set) var postProcessingProgress: Double = 0.0
-    @Published private(set) var postProcessingStatusText: String = "Preparando análisis..."
+    @Published private(set) var postProcessingStatusText: String = L10n.recorderPreparing
 
     /// Estado del detector visual en vivo
-    @Published private(set) var liveDetectorBanner: String = "Listo para grabar"
+    @Published private(set) var liveDetectorBanner: String = L10n.recorderReady
     @Published private(set) var liveDetectedEventType: AcousticEventType?
     @Published private(set) var activeSpeakerId: String = "speaker_1"
     @Published private(set) var activeSpeakerPitchHz: Double = 0.0
@@ -152,7 +152,7 @@ final class AudioRecorderService: ObservableObject {
         LiveActivityManager.shared.onAddBookmarkFromLockScreen = { [weak self] in
             guard let self = self else { return }
             if self.state == .recording || self.state == .paused {
-                self.addLiveBookmark(customLabel: "Marcador desde Pantalla Bloqueada")
+                self.addLiveBookmark(customLabel: L10n.bookmarkFromLockScreen)
             }
         }
     }
@@ -168,11 +168,11 @@ final class AudioRecorderService: ObservableObject {
         if state == .recording {
             if enabled {
                 transcriptionService.startLiveTranscription(diarizer: diarizationService, offsetSeconds: elapsedTime)
-                liveDetectorBanner = "🎙️ Transcripción en vivo activada"
+                liveDetectorBanner = L10n.recorderLiveOn
             } else {
                 hadLiveTranscriptionActiveEntireSession = false
                 transcriptionService.stopLiveTranscription()
-                liveDetectorBanner = "⚡ Modo Ahorro Activo (Audio ligero)"
+                liveDetectorBanner = L10n.recorderPowerSaverActive
             }
         }
     }
@@ -212,7 +212,7 @@ final class AudioRecorderService: ObservableObject {
             throw NSError(
                 domain: "PixelVoicePro.AudioRecorder",
                 code: 401,
-                userInfo: [NSLocalizedDescriptionKey: "El permiso de micrófono es obligatorio para grabar notas de voz."]
+                userInfo: [NSLocalizedDescriptionKey: L10n.recorderMicPermissionError]
             )
         }
 
@@ -234,7 +234,7 @@ final class AudioRecorderService: ObservableObject {
         self.liveWaveformWindow = Array(repeating: 0.04, count: 96)
         self.liveSpectrumBands = Array(repeating: 0.05, count: 28)
         self.postProcessingProgress = 0.0
-        self.postProcessingStatusText = "Preparando análisis..."
+        self.postProcessingStatusText = L10n.recorderPreparing
 
         // Por defecto, oculto/desactivado al iniciar para ahorrar RAM y batería en clases largas
         self.isLiveTranscriptionEnabled = false
@@ -305,14 +305,14 @@ final class AudioRecorderService: ObservableObject {
         try audioEngine.start()
 
         state = .recording
-        liveDetectorBanner = "⚡ Modo Ahorro (\(selectedFormat.shortBadge))"
+        liveDetectorBanner = L10n.recorderPowerSaverBadge(selectedFormat.shortBadge)
         liveDetectedEventType = nil
 
         LiveActivityManager.shared.startLockScreenActivity(
             title: liveCustomDraftTitle,
             startDate: exactStart,
             formatBadge: selectedFormat.shortBadge,
-            activeSpeaker: "L1"
+            activeSpeaker: L10n.speakerShortBadge(1)
         )
 
         start60FPSTimer()
@@ -331,9 +331,9 @@ final class AudioRecorderService: ObservableObject {
         highPrecisionTimer?.invalidate()
         highPrecisionTimer = nil
         state = .paused
-        liveDetectorBanner = "⏸️ Grabación en pausa"
+        liveDetectorBanner = L10n.recorderPaused
 
-        let speakerBadge = liveSpeakers.first(where: { $0.id == activeSpeakerId })?.shortBadgeCode ?? "L1"
+        let speakerBadge = liveSpeakers.first(where: { $0.id == activeSpeakerId })?.shortBadgeCode ?? L10n.speakerShortBadge(1)
         LiveActivityManager.shared.updateLockScreenProgress(
             title: liveCustomDraftTitle,
             startDate: recordingStartDate ?? Date(),
@@ -358,9 +358,9 @@ final class AudioRecorderService: ObservableObject {
             liveTranscript: isLiveTranscriptionEnabled
         )
         state = .recording
-        liveDetectorBanner = "🎙️ Grabación reanudada"
+        liveDetectorBanner = L10n.recorderResumed
 
-        let speakerBadge = liveSpeakers.first(where: { $0.id == activeSpeakerId })?.shortBadgeCode ?? "L1"
+        let speakerBadge = liveSpeakers.first(where: { $0.id == activeSpeakerId })?.shortBadgeCode ?? L10n.speakerShortBadge(1)
         LiveActivityManager.shared.updateLockScreenProgress(
             title: liveCustomDraftTitle,
             startDate: recordingStartDate ?? Date(),
@@ -381,8 +381,8 @@ final class AudioRecorderService: ObservableObject {
         if let custom = customLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
             resolvedLabel = custom
         } else {
-            let speakerBadge = liveSpeakers.first(where: { $0.id == activeSpeakerId })?.shortBadgeCode ?? "L1"
-            resolvedLabel = "Momento clave #\(index) (\(speakerBadge))"
+            let speakerBadge = liveSpeakers.first(where: { $0.id == activeSpeakerId })?.shortBadgeCode ?? L10n.speakerShortBadge(1)
+            resolvedLabel = L10n.bookmarkKeyMoment(index: index, speakerBadge: speakerBadge)
         }
 
         let bookmark = RecordingBookmark(
@@ -392,7 +392,7 @@ final class AudioRecorderService: ObservableObject {
             createdAt: Date()
         )
         liveBookmarks.append(bookmark)
-        liveDetectorBanner = "🔖 Marcador en \(bookmark.formattedTimestamp)"
+        liveDetectorBanner = L10n.recorderBookmarkAt(bookmark.formattedTimestamp)
         return bookmark
     }
 
@@ -505,7 +505,7 @@ final class AudioRecorderService: ObservableObject {
             sha256Hash: "",
             isFavorite: false,
             isProcessingBackground: true,
-            transcriptionEngineUsed: "Procesando análisis e IA en segundo plano...",
+            transcriptionEngineUsed: L10n.recorderProcessingBg,
             tags: initialTags,
             speakers: speakersSnapshot,
             segments: currentSegments,
@@ -643,8 +643,8 @@ final class AudioRecorderService: ObservableObject {
                 self.activeSpeakerPitchHz = diarizationResult.pitchHz
 
                 if diarizationResult.isVoiceActive && self.liveDetectedEventType == nil {
-                    let speakerBadge = speakersSnapshot.first(where: { $0.id == diarizationResult.speakerId })?.shortBadgeCode ?? "L1"
-                    let modeTag = self.isLiveTranscriptionEnabled ? "" : " · ⚡ Ahorro"
+                    let speakerBadge = speakersSnapshot.first(where: { $0.id == diarizationResult.speakerId })?.shortBadgeCode ?? L10n.speakerShortBadge(1)
+                    let modeTag = self.isLiveTranscriptionEnabled ? "" : " · \(L10n.recorderPowerSaverShort)"
                     if diarizationResult.pitchHz > 0 {
                         self.liveDetectorBanner = "🎙️ \(speakerBadge) (\(Int(diarizationResult.pitchHz)) Hz)\(modeTag)"
                     } else {
@@ -692,7 +692,7 @@ final class AudioRecorderService: ObservableObject {
                 }
 
                 // Actualizar la tarjeta persistente en la pantalla bloqueada (LiveActivityManager ya aplica throttle de 1s)
-                let speakerBadge = self.liveSpeakers.first(where: { $0.id == self.activeSpeakerId })?.shortBadgeCode ?? "L1"
+                let speakerBadge = self.liveSpeakers.first(where: { $0.id == self.activeSpeakerId })?.shortBadgeCode ?? L10n.speakerShortBadge(1)
                 LiveActivityManager.shared.updateLockScreenProgress(
                     title: self.liveCustomDraftTitle,
                     startDate: self.recordingStartDate ?? Date(),

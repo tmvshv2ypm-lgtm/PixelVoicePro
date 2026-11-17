@@ -14,6 +14,7 @@ struct LiveBoothWaveformView: View {
     let liveSpeakerTurns: [SpeakerTurnMarker]
     let speakers: [SpeakerProfile]
     var expandVertically: Bool = false
+    var minCanvasHeight: CGFloat = 132
 
     @State private var showSpectrumMode: Bool = false
     /// Escala en puntos por segundo (zoom estilo CapCut: de 12 pt/s a 80 pt/s)
@@ -66,7 +67,7 @@ struct LiveBoothWaveformView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: followLivePlayhead ? "scope" : "location.fill")
-                        Text(followLivePlayhead ? "Siguiendo" : "Seguir")
+                        Text(followLivePlayhead ? L10n.waveformFollowing : L10n.waveformFollow)
                     }
                     .font(.system(size: 11, weight: .bold))
                     .lineLimit(1)
@@ -86,7 +87,7 @@ struct LiveBoothWaveformView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: showSpectrumMode ? "waveform" : "chart.bar.xaxis")
-                        Text(showSpectrumMode ? "Onda" : "FFT")
+                        Text(showSpectrumMode ? L10n.waveformWave : L10n.waveformFFT)
                     }
                     .font(.system(size: 11, weight: .bold))
                     .padding(.horizontal, 10)
@@ -104,7 +105,7 @@ struct LiveBoothWaveformView: View {
                                 let clamped = CGFloat(max(0.06, min(1.0, bandLevel)))
                                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                                     .fill(activeSpeakerColor)
-                                    .frame(height: max(10, clamped * max(80, specGeo.size.height - 28)))
+                                    .frame(height: max(10, clamped * max(max(44, minCanvasHeight - 40), specGeo.size.height - 28)))
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -113,7 +114,7 @@ struct LiveBoothWaveformView: View {
                     }
                 } else {
                     GeometryReader { outerGeo in
-                        let height = max(132, outerGeo.size.height)
+                        let height = max(minCanvasHeight, outerGeo.size.height)
                         let tileCount = max(2, Int(ceil(effectiveDuration / tileDuration)))
                         let playheadTileIdx = min(tileCount - 1, max(0, Int(elapsedTime / tileDuration)))
 
@@ -173,7 +174,7 @@ struct LiveBoothWaveformView: View {
                     }
                 }
             }
-            .frame(minHeight: 132, maxHeight: expandVertically ? .infinity : 164)
+            .frame(minHeight: minCanvasHeight, maxHeight: expandVertically ? .infinity : 164)
             .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
@@ -341,6 +342,7 @@ struct InteractiveTimelineWaveformView: View {
     let searchHits: [LocalWordSearchHit]
     let onSeek: (TimeInterval) -> Void
     var isFullScreenExpanded: Bool = true
+    var minWaveformHeight: CGFloat = 120
 
     @State private var pointsPerSecond: CGFloat = 24.0
     @State private var basePointsPerSecond: CGFloat = 24.0
@@ -413,7 +415,7 @@ struct InteractiveTimelineWaveformView: View {
 
             // Contenedor desplazable horizontalmente a todo lo ancho (sin caja gris)
             GeometryReader { outerGeo in
-                let height = max(120, outerGeo.size.height)
+                let height = max(minWaveformHeight, outerGeo.size.height)
 
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {

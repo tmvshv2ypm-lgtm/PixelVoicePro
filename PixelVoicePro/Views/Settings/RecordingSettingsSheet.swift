@@ -1,4 +1,5 @@
 import SwiftUI
+import Speech
 
 /// Panel de configuración de calidad de grabación (`.m4a` AAC / `.wav` PCM), almacenamiento de la biblioteca
 /// y motor híbrido de IA (Apple Speech + Whisper).
@@ -8,29 +9,32 @@ struct RecordingSettingsSheet: View {
     @ObservedObject var recorderService: AudioRecorderService
     @State private var transcriptionConfig: TranscriptionConfiguration = .load()
 
-    private let supportedSpanishLocales: [(id: String, name: String)] = [
-        ("es-ES", "Español (España)"),
-        ("es-MX", "Español (México)"),
-        ("es-419", "Español (Latinoamérica)"),
-        ("es-CO", "Español (Colombia)"),
-        ("es-AR", "Español (Argentina)"),
-        ("es-US", "Español (Estados Unidos)")
-    ]
+    private var speechLocaleOptions: [(id: String, name: String)] {
+        SpeechTranscriptionService.availableSpeechLocaleOptions()
+    }
+
+    private var resolvedSpeechLocale: Locale {
+        SpeechTranscriptionService.resolveRecognitionLocale(for: transcriptionConfig.localeIdentifier)
+    }
+
+    private var supportsOfflineRecognition: Bool {
+        SFSpeechRecognizer(locale: resolvedSpeechLocale)?.supportsOnDeviceRecognition ?? false
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Almacenamiento y Biblioteca") {
+                Section(L10n.settingsSectionStorage) {
                     HStack {
-                        Label("Notas de voz guardadas", systemImage: "waveform.circle.fill")
+                        Label(L10n.settingsSavedNotes, systemImage: "waveform.circle.fill")
                         Spacer()
-                        Text("\(viewModel.recordings.count) nota(s)")
+                        Text(L10n.groupNotesCount(viewModel.recordings.count))
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(PixelTheme.accentBlue)
                     }
 
                     HStack {
-                        Label("Espacio total ocupado", systemImage: "internaldrive.fill")
+                        Label(L10n.settingsTotalStorage, systemImage: "internaldrive.fill")
                         Spacer()
                         Text(viewModel.formattedTotalStorageUsed)
                             .font(.system(.subheadline, design: .monospaced).weight(.semibold))
@@ -39,7 +43,7 @@ struct RecordingSettingsSheet: View {
                 }
 
                 Section {
-                    Picker("Formato de Grabación", selection: $recorderService.selectedFormat) {
+                    Picker(L10n.settingsRecordingFormat, selection: $recorderService.selectedFormat) {
                         ForEach(AudioFormatOption.allCases) { format in
                             Text(format.displayName).tag(format)
                         }
@@ -50,61 +54,80 @@ struct RecordingSettingsSheet: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Picker("Frecuencia de Muestreo", selection: $recorderService.selectedSampleRate) {
+                    Picker(L10n.settingsSampleRate, selection: $recorderService.selectedSampleRate) {
                         ForEach(SampleRateOption.allCases) { rate in
                             Text(rate.displayLabel).tag(rate)
                         }
                     }
                 } header: {
-                    Text("Motor de Audio AVFoundation")
+                    Text(L10n.settingsSectionAudio)
                 }
 
                 Section {
-                    Picker("Variante de Español", selection: $transcriptionConfig.localeIdentifier) {
-                        ForEach(supportedSpanishLocales, id: \.id) { locale in
+                    Picker(L10n.settingsSpeechLanguage, selection: $transcriptionConfig.localeIdentifier) {
+                        Text(L10n.settingsSpeechAuto)
+                            .tag(TranscriptionConfiguration.automaticLocaleIdentifier)
+
+                        Divider()
+
+                        ForEach(speechLocaleOptions, id: \.id) { locale in
                             Text(locale.name).tag(locale.id)
                         }
                     }
 
-                    Toggle("Priorizar Reconocimiento On-Device (Offline)", isOn: $transcriptionConfig.preferOnDeviceRecognition)
+                    HStack {
+                        Label(L10n.settingsSpeechActiveLabel, systemImage: "globe")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(SpeechTranscriptionService.localizedDisplayName(for: resolvedSpeechLocale))
+                                .font(.caption.weight(.semibold))
+                            Text(supportsOfflineRecognition ? L10n.settingsSpeechOfflineAvailable : L10n.settingsSpeechCloudFallback)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(supportsOfflineRecognition ? .green : .orange)
+                        }
+                    }
+
+                    Toggle(L10n.settingsSpeechOnDevice, isOn: $transcriptionConfig.preferOnDeviceRecognition)
                 } header: {
-                    Text("Transcripción en Tiempo Real (Framework Speech)")
+                    Text(L10n.settingsSectionSpeechHeader)
                 } footer: {
-                    Text("El modo On-Device procesa la voz directamente en el Neural Engine del iPhone con latencia cero y privacidad total.")
+                    Text(L10n.settingsSectionSpeechFooter)
                 }
 
                 Section {
-                    Toggle("Activar Post-Procesamiento Whisper API / Local", isOn: $transcriptionConfig.enableWhisperPostProcessing)
+                    Toggle(L10n.settingsWhisperToggle, isOn: $transcriptionConfig.enableWhisperPostProcessing)
 
                     if transcriptionConfig.enableWhisperPostProcessing {
-                        TextField("Endpoint URL", text: $transcriptionConfig.whisperEndpointURL)
+                        TextField(L10n.settingsWhisperEndpoint, text: $transcriptionConfig.whisperEndpointURL)
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .font(.caption)
 
-                        TextField("Modelo (ej. whisper-1 o whisper-large-v3)", text: $transcriptionConfig.whisperModelName)
+                        TextField(L10n.settingsWhisperModel, text: $transcriptionConfig.whisperModelName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
 
-                        SecureField("Clave API (Bearer Token)", text: $transcriptionConfig.whisperAPIKey)
+                        SecureField(L10n.settingsWhisperAPIKey, text: $transcriptionConfig.whisperAPIKey)
                     }
                 } header: {
-                    Text("Módulo Híbrido Whisper AI (Opcional)")
+                    Text(L10n.settingsSectionWhisperHeader)
                 } footer: {
-                    Text("Puedes conectar la API oficial de OpenAI Whisper o un servidor Whisper local en tu red para refinar las marcas de tiempo palabra por palabra al finalizar cada grabación.")
+                    Text(L10n.settingsSectionWhisperFooter)
                 }
 
-                Section("Formato Estricto de Fechas y Horas") {
+                Section(L10n.settingsSectionDates) {
                     HStack {
-                        Text("Estándar activo")
+                        Text(L10n.settingsDateStandard)
                         Spacer()
-                        Text("DD/MM/YYYY - HH:MM:SS AM/PM")
+                        Text(verbatim: "DD/MM/YYYY - HH:MM:SS AM/PM")
                             .font(.system(.caption, design: .monospaced).weight(.bold))
                             .foregroundStyle(PixelTheme.accentBlue)
                     }
                     HStack {
-                        Text("Ejemplo en vivo")
+                        Text(L10n.settingsDateExample)
                         Spacer()
                         Text(ExactDateFormatter.fullExactTimestamp(from: Date()))
                             .font(.system(.caption, design: .monospaced))
@@ -112,11 +135,20 @@ struct RecordingSettingsSheet: View {
                     }
                 }
             }
-            .navigationTitle("Ajustes")
+            .navigationTitle(L10n.settingsTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: transcriptionConfig.localeIdentifier) { _, _ in
+                transcriptionConfig.save()
+            }
+            .onChange(of: transcriptionConfig.preferOnDeviceRecognition) { _, _ in
+                transcriptionConfig.save()
+            }
+            .onChange(of: transcriptionConfig.enableWhisperPostProcessing) { _, _ in
+                transcriptionConfig.save()
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Listo") {
+                    Button(L10n.done) {
                         transcriptionConfig.save()
                         dismiss()
                     }

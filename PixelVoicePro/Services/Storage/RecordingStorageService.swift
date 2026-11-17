@@ -161,7 +161,7 @@ enum RecordingStorageService {
 
         let dateNight = makeDate(hour: 22, minute: 25, second: 42, daysOffset: 0)
         let rec1 = createRichRecording(
-            title: "Clase Magistral: Redes Neuronales y Audio CoreML",
+            title: L10n.sample1Title,
             createdAt: dateNight,
             duration: 18.4,
             tags: [TagItem.predefinedTags[0], TagItem.predefinedTags[1]],
@@ -170,8 +170,8 @@ enum RecordingStorageService {
                 SpeakerProfile(
                     id: "speaker_1",
                     speakerNumber: 1,
-                    defaultLabel: "Locutor 1",
-                    customName: "Dr. Alejandro Vega",
+                    defaultLabel: L10n.speakerDefaultName(1),
+                    customName: L10n.sample1Speaker1,
                     colorHex: "#3B82F6",
                     pitchMeanHz: 132.0,
                     spectralCentroidHz: 1580.0,
@@ -181,8 +181,8 @@ enum RecordingStorageService {
                 SpeakerProfile(
                     id: "speaker_2",
                     speakerNumber: 2,
-                    defaultLabel: "Locutor 2",
-                    customName: "Sofía (Estudiante)",
+                    defaultLabel: L10n.speakerDefaultName(2),
+                    customName: L10n.sample1Speaker2,
                     colorHex: "#10B981",
                     pitchMeanHz: 214.0,
                     spectralCentroidHz: 2120.0,
@@ -194,13 +194,13 @@ enum RecordingStorageService {
                 (
                     speakerId: "speaker_1",
                     start: 0.2,
-                    words: ["Bienvenidos", "al", "laboratorio", "de", "inteligencia", "artificial", "aplicada", "al", "procesamiento", "acústico", "en", "tiempo", "real."],
+                    words: L10n.tokenizeSampleSentence(L10n.sample1Turn1),
                     events: []
                 ),
                 (
                     speakerId: "speaker_2",
                     start: 4.8,
-                    words: ["Profesor,", "¿el", "modelo", "puede", "separar", "voces", "y", "detectar", "risas", "durante", "una", "entrevista?"],
+                    words: L10n.tokenizeSampleSentence(L10n.sample1Turn2),
                     events: [
                         AcousticEvent(type: .laughter, timestamp: 6.8, duration: 1.1, confidence: 0.94),
                         AcousticEvent(type: .longPause, timestamp: 7.3, duration: 2.5, confidence: 0.97)
@@ -209,7 +209,7 @@ enum RecordingStorageService {
                 (
                     speakerId: "speaker_1",
                     start: 10.0,
-                    words: ["Exactamente,", "combinamos", "SoundAnalysis", "con", "diarización", "espectral", "para", "indexar", "cada", "segundo", "con", "precisión", "absoluta."],
+                    words: L10n.tokenizeSampleSentence(L10n.sample1Turn3),
                     events: [
                         AcousticEvent(type: .applause, timestamp: 16.4, duration: 1.6, confidence: 0.91)
                     ]
@@ -218,14 +218,14 @@ enum RecordingStorageService {
             bookmarks: [
                 RecordingBookmark(
                     timestamp: 4.8,
-                    label: "Pregunta de Sofía sobre Diarización",
-                    note: "Entra en el examen parcial del viernes",
+                    label: L10n.sample1BM1Label,
+                    note: L10n.sample1BM1Note,
                     createdAt: dateNight.addingTimeInterval(5)
                 ),
                 RecordingBookmark(
                     timestamp: 10.0,
-                    label: "Explicación de arquitectura CoreML",
-                    note: "Revisar diagrama de espectrograma",
+                    label: L10n.sample1BM2Label,
+                    note: L10n.sample1BM2Note,
                     createdAt: dateNight.addingTimeInterval(11)
                 )
             ],
@@ -236,7 +236,7 @@ enum RecordingStorageService {
 
         let dateAfternoon = makeDate(hour: 16, minute: 12, second: 9, daysOffset: 0)
         let rec2 = createRichRecording(
-            title: "Entrevista UX: Flujo de Búsqueda Instantánea",
+            title: L10n.sample2Title,
             createdAt: dateAfternoon,
             duration: 14.6,
             tags: [TagItem.predefinedTags[2], TagItem.predefinedTags[3]],
@@ -245,7 +245,7 @@ enum RecordingStorageService {
                 SpeakerProfile(
                     id: "speaker_1",
                     speakerNumber: 1,
-                    defaultLabel: "Locutor 1",
+                    defaultLabel: L10n.speakerDefaultName(1),
                     customName: nil,
                     colorHex: "#3B82F6",
                     pitchMeanHz: 144.0,
@@ -256,7 +256,7 @@ enum RecordingStorageService {
                 SpeakerProfile(
                     id: "speaker_2",
                     speakerNumber: 2,
-                    defaultLabel: "Locutor 2",
+                    defaultLabel: L10n.speakerDefaultName(2),
                     customName: nil,
                     colorHex: "#10B981",
                     pitchMeanHz: 196.0,
@@ -269,7 +269,7 @@ enum RecordingStorageService {
                 (
                     speakerId: "speaker_1",
                     start: 0.3,
-                    words: ["Necesitamos", "que", "el", "buscador", "global", "encuentre", "cualquier", "palabra", "clave", "en", "todas", "las", "grabaciones."],
+                    words: L10n.tokenizeSampleSentence(L10n.sample2Turn1),
                     events: [
                         AcousticEvent(type: .music, timestamp: 3.9, duration: 1.4, confidence: 0.89)
                     ]
@@ -277,7 +277,7 @@ enum RecordingStorageService {
                 (
                     speakerId: "speaker_2",
                     start: 6.0,
-                    words: ["Totalmente", "de", "acuerdo,", "y", "al", "tocar", "la", "palabra", "debe", "saltar", "al", "segundo", "exacto", "del", "audio."],
+                    words: L10n.tokenizeSampleSentence(L10n.sample2Turn2),
                     events: [
                         AcousticEvent(type: .sigh, timestamp: 12.8, duration: 0.9, confidence: 0.86)
                     ]
@@ -286,8 +286,8 @@ enum RecordingStorageService {
             bookmarks: [
                 RecordingBookmark(
                     timestamp: 6.0,
-                    label: "Requisito Karaoke interactivo",
-                    note: "Sincronización a 60 FPS",
+                    label: L10n.sample2BM1Label,
+                    note: L10n.sample2BM1Note,
                     createdAt: dateAfternoon.addingTimeInterval(6)
                 )
             ],
@@ -298,7 +298,7 @@ enum RecordingStorageService {
 
         let dateMorning = makeDate(hour: 8, minute: 47, second: 19, daysOffset: 0)
         let rec3 = createRichRecording(
-            title: "Ideas de Arquitectura: Compresión AAC y Metadatos",
+            title: L10n.sample3Title,
             createdAt: dateMorning,
             duration: 11.2,
             tags: [TagItem.predefinedTags[4]],
@@ -307,8 +307,8 @@ enum RecordingStorageService {
                 SpeakerProfile(
                     id: "speaker_1",
                     speakerNumber: 1,
-                    defaultLabel: "Locutor 1",
-                    customName: "Ingeniero Principal",
+                    defaultLabel: L10n.speakerDefaultName(1),
+                    customName: L10n.sample3Speaker1,
                     colorHex: "#3B82F6",
                     pitchMeanHz: 136.0,
                     spectralCentroidHz: 1610.0,
@@ -320,15 +320,15 @@ enum RecordingStorageService {
                 (
                     speakerId: "speaker_1",
                     start: 0.2,
-                    words: ["Recordatorio", "importante:", "todas", "las", "tarjetas", "deben", "mostrar", "el", "formato", "día,", "mes,", "año", "y", "la", "hora", "exacta", "hasta", "el", "segundo", "con", "AM", "o", "PM."],
+                    words: L10n.tokenizeSampleSentence(L10n.sample3Turn1),
                     events: []
                 )
             ],
             bookmarks: [
                 RecordingBookmark(
                     timestamp: 2.1,
-                    label: "Prioridad máxima: Fechas exactas",
-                    note: "Prohibido usar fechas ambiguas",
+                    label: L10n.sample3BM1Label,
+                    note: L10n.sample3BM1Note,
                     createdAt: dateMorning.addingTimeInterval(3)
                 )
             ],
@@ -384,7 +384,7 @@ enum RecordingStorageService {
                 speakerId: turn.speakerId,
                 startTime: turn.start,
                 endTime: segEnd,
-                text: turn.words.joined(separator: " "),
+                text: L10n.smartJoinWords(turn.words),
                 words: wordModels,
                 inlineEvents: turn.events
             )
@@ -417,7 +417,10 @@ enum RecordingStorageService {
             fileSizeBytes: fileSize,
             sha256Hash: sha256,
             isFavorite: isFavorite,
-            transcriptionEngineUsed: "Apple Speech On-Device (es) + PixelVoice DSP Diarizer + SoundAnalysis",
+            transcriptionEngineUsed: L10n.speechEngineApple(
+                SpeechTranscriptionService.resolveRecognitionLocale(for: TranscriptionConfiguration.automaticLocaleIdentifier).identifier,
+                onDevice: true
+            ),
             tags: tags,
             speakers: speakers,
             segments: builtSegments,

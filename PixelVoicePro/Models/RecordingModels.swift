@@ -12,8 +12,8 @@ enum AudioFormatOption: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .m4a: return "AAC Alta Fidelidad (.m4a)"
-        case .wav: return "Linear PCM Sin Pérdida (.wav)"
+        case .m4a: return L10n.formatM4AName
+        case .wav: return L10n.formatWAVName
         }
     }
 
@@ -26,10 +26,8 @@ enum AudioFormatOption: String, Codable, CaseIterable, Identifiable {
 
     var descriptionText: String {
         switch self {
-        case .m4a:
-            return "Compresión inteligente de alta nitidez vocal (~1.1 MB/min). Ideal para clases largas, entrevistas y uso diario."
-        case .wav:
-            return "Audio de estudio sin compresión (~5.5 MB/min). Máximo rango dinámico para análisis acústico profundo."
+        case .m4a: return L10n.formatM4ADesc
+        case .wav: return L10n.formatWAVDesc
         }
     }
 
@@ -73,8 +71,8 @@ enum SampleRateOption: Double, Codable, CaseIterable, Identifiable {
 
     var displayLabel: String {
         switch self {
-        case .hz44100: return "44.1 kHz (Estándar CD)"
-        case .hz48000: return "48.0 kHz (Estudio Pro)"
+        case .hz44100: return L10n.rate44100
+        case .hz48000: return L10n.rate48000
         }
     }
 }
@@ -111,17 +109,25 @@ struct TagItem: Identifiable, Codable, Hashable {
         Color(hex: colorHex)
     }
 
-    static let predefinedTags: [TagItem] = [
-        TagItem(id: "tag_universidad", name: "Universidad", colorHex: "#3B82F6", iconName: "graduationcap.fill"),
-        TagItem(id: "tag_clases", name: "Clases", colorHex: "#8B5CF6", iconName: "book.closed.fill"),
-        TagItem(id: "tag_entrevistas", name: "Entrevistas", colorHex: "#10B981", iconName: "mic.badge.plus"),
-        TagItem(id: "tag_trabajo", name: "Trabajo", colorHex: "#F59E0B", iconName: "briefcase.fill"),
-        TagItem(id: "tag_ideas", name: "Ideas", colorHex: "#EC4899", iconName: "lightbulb.fill"),
-        TagItem(id: "tag_reunion", name: "Reuniones", colorHex: "#06B6D4", iconName: "person.3.fill"),
-        TagItem(id: "tag_microbiologia", name: "Microbiología", colorHex: "#14B8A6", iconName: "microbe.fill"),
-        TagItem(id: "tag_anatomia_humana", name: "Anatomía humana", colorHex: "#F43F5E", iconName: "lungs.fill"),
-        TagItem(id: "tag_investigacion_social", name: "Investigación social", colorHex: "#F97316", iconName: "globe.americas.fill")
-    ]
+    /// Nombre visible localizado automáticamente para las carpetas predeterminadas,
+    /// conservando el nombre original en etiquetas creadas por el usuario.
+    var localizedName: String {
+        L10n.localizedPredefinedTagName(id: id, fallback: name)
+    }
+
+    static var predefinedTags: [TagItem] {
+        [
+            TagItem(id: "tag_universidad", name: L10n.localizedPredefinedTagName(id: "tag_universidad", fallback: "Universidad"), colorHex: "#3B82F6", iconName: "graduationcap.fill"),
+            TagItem(id: "tag_clases", name: L10n.localizedPredefinedTagName(id: "tag_clases", fallback: "Clases"), colorHex: "#8B5CF6", iconName: "book.closed.fill"),
+            TagItem(id: "tag_entrevistas", name: L10n.localizedPredefinedTagName(id: "tag_entrevistas", fallback: "Entrevistas"), colorHex: "#10B981", iconName: "mic.badge.plus"),
+            TagItem(id: "tag_trabajo", name: L10n.localizedPredefinedTagName(id: "tag_trabajo", fallback: "Trabajo"), colorHex: "#F59E0B", iconName: "briefcase.fill"),
+            TagItem(id: "tag_ideas", name: L10n.localizedPredefinedTagName(id: "tag_ideas", fallback: "Ideas"), colorHex: "#EC4899", iconName: "lightbulb.fill"),
+            TagItem(id: "tag_reunion", name: L10n.localizedPredefinedTagName(id: "tag_reunion", fallback: "Reuniones"), colorHex: "#06B6D4", iconName: "person.3.fill"),
+            TagItem(id: "tag_microbiologia", name: L10n.localizedPredefinedTagName(id: "tag_microbiologia", fallback: "Microbiología"), colorHex: "#14B8A6", iconName: "microbe.fill"),
+            TagItem(id: "tag_anatomia_humana", name: L10n.localizedPredefinedTagName(id: "tag_anatomia_humana", fallback: "Anatomía humana"), colorHex: "#F43F5E", iconName: "lungs.fill"),
+            TagItem(id: "tag_investigacion_social", name: L10n.localizedPredefinedTagName(id: "tag_investigacion_social", fallback: "Investigación social"), colorHex: "#F97316", iconName: "globe.americas.fill")
+        ]
+    }
 }
 
 // MARK: - Identificación de Locutores (Speaker Diarization)
@@ -137,20 +143,25 @@ struct SpeakerProfile: Identifiable, Codable, Hashable {
     var totalSpeakingDuration: TimeInterval
     var wordCount: Int
 
-    /// Nombre visible en la vista de detalle: usa el nombre real asignado por el usuario o "Locutor X" por defecto.
+    /// Nombre visible en la vista de detalle: usa el nombre real asignado por el usuario o "Speaker X" / "Locutor X" localizado.
     var displayName: String {
         if let custom = customName?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
             return custom
         }
-        return defaultLabel
+        return L10n.speakerDefaultName(speakerNumber)
     }
 
-    /// Etiqueta ultra compacta para la Cabina de Grabación en Vivo: L1, L2, L3, L4...
+    /// Etiqueta por defecto localizada para el idioma actual del dispositivo.
+    var localizedDefaultLabel: String {
+        L10n.speakerDefaultName(speakerNumber)
+    }
+
+    /// Etiqueta ultra compacta para la Cabina de Grabación en Vivo: S1/L1, S2/L2...
     var shortBadgeCode: String {
-        "L\(speakerNumber)"
+        L10n.speakerShortBadge(speakerNumber)
     }
 
-    /// Nombre compacto en toda la interfaz: nombre personalizado si existe, o `L1`, `L2`, `L3`...
+    /// Nombre compacto en toda la interfaz: nombre personalizado si existe, o insignia corta localizada.
     var compactLabel: String {
         if let custom = customName?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
             return custom
@@ -176,7 +187,7 @@ struct SpeakerProfile: Identifiable, Codable, Hashable {
         SpeakerProfile(
             id: "speaker_\(number)",
             speakerNumber: number,
-            defaultLabel: "Locutor \(number)",
+            defaultLabel: L10n.speakerDefaultName(number),
             customName: nil,
             colorHex: PixelTheme.colorHex(forSpeakerIndex: number - 1),
             pitchMeanHz: pitchHz,
@@ -199,15 +210,19 @@ enum AcousticEventType: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var spanishTitle: String {
+    var localizedTitle: String {
         switch self {
-        case .laughter: return "Risas"
-        case .applause: return "Aplausos"
-        case .music: return "Música"
-        case .sigh: return "Suspiro"
-        case .longPause: return "Pausa larga"
-        case .cough: return "Tos / Carraspeo"
+        case .laughter: return L10n.eventLaughter
+        case .applause: return L10n.eventApplause
+        case .music: return L10n.eventMusic
+        case .sigh: return L10n.eventSigh
+        case .longPause: return L10n.eventLongPause
+        case .cough: return L10n.eventCough
         }
+    }
+
+    var spanishTitle: String {
+        localizedTitle
     }
 
     var emoji: String {
@@ -255,15 +270,15 @@ struct AcousticEvent: Identifiable, Codable, Hashable {
     var duration: TimeInterval
     var confidence: Double
 
-    /// Etiqueta visual estilo Google Pixel: ej. `[😂 Risas - 02:14]` o `[🎵 Música - 01:05]`
+    /// Etiqueta visual estilo Google Pixel: ej. `[😂 Risas - 02:14]` o `[🎵 Music - 01:05]`
     var formattedInlineTag: String {
         let timeStr = ExactDateFormatter.standardDuration(timestamp)
-        return "[\(type.emoji) \(type.spanishTitle) - \(timeStr)]"
+        return "[\(type.emoji) \(type.localizedTitle) - \(timeStr)]"
     }
 
     /// Etiqueta corta para badges compactos
     var compactBadgeLabel: String {
-        "\(type.emoji) \(type.spanishTitle) · \(ExactDateFormatter.standardDuration(timestamp))"
+        "\(type.emoji) \(type.localizedTitle) · \(ExactDateFormatter.standardDuration(timestamp))"
     }
 }
 

@@ -30,11 +30,11 @@ struct QuickRenameAndTagSheet: View {
             Form {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("TÍTULO PERSONALIZADO DE LA NOTA")
+                        Text(L10n.quickCustomTitleHeader)
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.secondary)
 
-                        TextField("Ej. Clase de Sistemas Distribuidos...", text: $editedTitle)
+                        TextField(L10n.quickTitlePlaceholder, text: $editedTitle)
                             .font(.title3.weight(.bold))
                             .textFieldStyle(.roundedBorder)
 
@@ -48,7 +48,7 @@ struct QuickRenameAndTagSheet: View {
 
                             Spacer()
 
-                            Label(recording.dayPeriod.rawValue, systemImage: recording.dayPeriod.iconName)
+                            Label(recording.dayPeriod.localizedTitle, systemImage: recording.dayPeriod.iconName)
                                 .font(.caption.weight(.bold))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
@@ -58,8 +58,8 @@ struct QuickRenameAndTagSheet: View {
                         .padding(.top, 4)
 
                         HStack(spacing: 12) {
-                            Label("Duración: \(recording.formattedPreciseDuration)", systemImage: "timer")
-                            Label("Peso: \(recording.formattedFileSize)", systemImage: "internaldrive")
+                            Label(L10n.quickDurationLabel(recording.formattedPreciseDuration), systemImage: "timer")
+                            Label(L10n.quickSizeLabel(recording.formattedFileSize), systemImage: "internaldrive")
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -67,7 +67,7 @@ struct QuickRenameAndTagSheet: View {
                     .padding(.vertical, 4)
                 }
 
-                Section("Etiquetas") {
+                Section(L10n.tags) {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(compactQuickTags) { tag in
@@ -78,7 +78,7 @@ struct QuickRenameAndTagSheet: View {
                                     HStack(spacing: 6) {
                                         Image(systemName: tag.iconName)
                                             .font(.caption.weight(.bold))
-                                        Text(tag.name)
+                                        Text(tag.localizedName)
                                             .font(.caption.weight(.semibold))
                                             .lineLimit(1)
                                         if isSelected {
@@ -106,22 +106,22 @@ struct QuickRenameAndTagSheet: View {
                                     .liquidGlassCircle()
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Añadir o gestionar etiquetas")
+                            .accessibilityLabel(L10n.quickManageTagsAccessibility)
                         }
                         .padding(.vertical, 4)
                     }
                 }
             }
-            .navigationTitle("Título y Etiquetas")
+            .navigationTitle(L10n.quickNavTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar") {
+                    Button(L10n.cancel) {
                         dismiss()
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar") {
+                    Button(L10n.save) {
                         viewModel.updateRecordingTitleAndTags(
                             recording,
                             newTitle: editedTitle,

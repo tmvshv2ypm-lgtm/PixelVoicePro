@@ -6,6 +6,8 @@ import SwiftUI
 /// sincronización con Pantalla Bloqueada (`LiveActivityManager`) y Pantalla de Post-Procesamiento por fragmentos de 45s.
 struct RecordingBoothView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @ObservedObject var viewModel: AppViewModel
     @ObservedObject var recorderService: AudioRecorderService
 
@@ -30,44 +32,97 @@ struct RecordingBoothView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geo in
-                let safeScreenWidth = max(320.0, geo.size.width)
-                let contentWidth = safeScreenWidth - 32.0
+                let safeScreenWidth = max(280.0, geo.size.width)
+                let isLandscapeCompact = (geo.size.width > geo.size.height && geo.size.height < 560) || verticalSizeClass == .compact
 
-                VStack(spacing: 10) {
-                    // 1. Título opcional rápido de la nota (sin cronología de fecha/hora en cabina)
-                    topExactMetadataBanner(contentWidth: contentWidth)
+                Group {
+                    if isLandscapeCompact {
+                        let layoutWidth = min(safeScreenWidth - 32.0, 960.0)
+                        let columnSpacing: CGFloat = 14.0
+                        let leftWidth = floor((layoutWidth - columnSpacing) * 0.54)
+                        let rightWidth = max(220.0, layoutWidth - columnSpacing - leftWidth)
 
-                    // 2. Cronómetro de Alta Precisión con Milisegundos (HH:MM:SS.cc) + Detector Visual de Eventos
-                    chronometerAndLiveDetectorSection(contentWidth: contentWidth)
+                        HStack(alignment: .top, spacing: columnSpacing) {
+                            VStack(spacing: 8) {
+                                topExactMetadataBanner(contentWidth: leftWidth)
 
-                    // 3. Línea de Tiempo CapCut (se expande dinámicamente en Modo Ahorro cuando la transcripción está oculta)
-                    LiveBoothWaveformView(
-                        waveformSamples: recorderService.liveWaveformWindow,
-                        timelineSamples: recorderService.liveTimelineSamples,
-                        spectrumBands: recorderService.liveSpectrumBands,
-                        elapsedTime: recorderService.elapsedTime,
-                        isRecording: recorderService.state == .recording,
-                        activeSpeakerColor: activeSpeakerProfile.color,
-                        liveEvents: recorderService.liveAcousticEvents,
-                        liveBookmarks: recorderService.liveBookmarks,
-                        liveSpeakerTurns: recorderService.liveSpeakerTurns,
-                        speakers: recorderService.liveSpeakers,
-                        expandVertically: !recorderService.isLiveTranscriptionEnabled
-                    )
-                    .frame(width: contentWidth)
-                    .frame(maxHeight: recorderService.isLiveTranscriptionEnabled ? 205 : .infinity)
+                                chronometerAndLiveDetectorSection(contentWidth: leftWidth, compact: true)
 
-                    // 4. Barra compacta de locutores (L1, L2, L3, L4) y eventos acústicos
-                    liveSpeakersAndAcousticQuickBar(contentWidth: contentWidth)
+                                LiveBoothWaveformView(
+                                    waveformSamples: recorderService.liveWaveformWindow,
+                                    timelineSamples: recorderService.liveTimelineSamples,
+                                    spectrumBands: recorderService.liveSpectrumBands,
+                                    elapsedTime: recorderService.elapsedTime,
+                                    isRecording: recorderService.state == .recording,
+                                    activeSpeakerColor: activeSpeakerProfile.color,
+                                    liveEvents: recorderService.liveAcousticEvents,
+                                    liveBookmarks: recorderService.liveBookmarks,
+                                    liveSpeakerTurns: recorderService.liveSpeakerTurns,
+                                    speakers: recorderService.liveSpeakers,
+                                    expandVertically: true,
+                                    minCanvasHeight: 84
+                                )
+                                .frame(width: leftWidth)
+                                .frame(maxHeight: .infinity)
 
-                    // 5. Control de Transcripción en Vivo Plegable (sin caja vacía al ocultar)
-                    collapsibleLiveTranscriptionSection(contentWidth: contentWidth)
+                                liveSpeakersAndAcousticQuickBar(contentWidth: leftWidth)
+                            }
+                            .frame(width: leftWidth, height: max(220.0, geo.size.height - 12), alignment: .top)
 
-                    // 6. Controles Inferiores (Marcador en Vivo, Pausar/Reanudar y Finalizar)
-                    bottomRecordingControls(contentWidth: contentWidth)
+                            VStack(spacing: 8) {
+                                collapsibleLiveTranscriptionSection(contentWidth: rightWidth, compactLandscape: true)
+
+                                if !recorderService.isLiveTranscriptionEnabled {
+                                    Spacer(minLength: 0)
+                                }
+
+                                bottomRecordingControls(contentWidth: rightWidth, compact: true)
+                            }
+                            .frame(width: rightWidth, height: max(220.0, geo.size.height - 12), alignment: .bottom)
+                        }
+                        .padding(.vertical, 6)
+                        .frame(width: safeScreenWidth, height: geo.size.height, alignment: .center)
+                    } else {
+                        let maxRegularWidth: CGFloat = horizontalSizeClass == .regular ? 760.0 : (safeScreenWidth - 32.0)
+                        let contentWidth = min(safeScreenWidth - 32.0, maxRegularWidth)
+
+                        VStack(spacing: 10) {
+                            // 1. Título opcional rápido de la nota (sin cronología de fecha/hora en cabina)
+                            topExactMetadataBanner(contentWidth: contentWidth)
+
+                            // 2. Cronómetro de Alta Precisión con Milisegundos (HH:MM:SS.cc) + Detector Visual de Eventos
+                            chronometerAndLiveDetectorSection(contentWidth: contentWidth, compact: false)
+
+                            // 3. Línea de Tiempo CapCut (se expande dinámicamente en Modo Ahorro cuando la transcripción está oculta)
+                            LiveBoothWaveformView(
+                                waveformSamples: recorderService.liveWaveformWindow,
+                                timelineSamples: recorderService.liveTimelineSamples,
+                                spectrumBands: recorderService.liveSpectrumBands,
+                                elapsedTime: recorderService.elapsedTime,
+                                isRecording: recorderService.state == .recording,
+                                activeSpeakerColor: activeSpeakerProfile.color,
+                                liveEvents: recorderService.liveAcousticEvents,
+                                liveBookmarks: recorderService.liveBookmarks,
+                                liveSpeakerTurns: recorderService.liveSpeakerTurns,
+                                speakers: recorderService.liveSpeakers,
+                                expandVertically: !recorderService.isLiveTranscriptionEnabled
+                            )
+                            .frame(width: contentWidth)
+                            .frame(maxHeight: recorderService.isLiveTranscriptionEnabled ? 205 : .infinity)
+
+                            // 4. Barra compacta de locutores y eventos acústicos
+                            liveSpeakersAndAcousticQuickBar(contentWidth: contentWidth)
+
+                            // 5. Control de Transcripción en Vivo Plegable (sin caja vacía al ocultar)
+                            collapsibleLiveTranscriptionSection(contentWidth: contentWidth, compactLandscape: false)
+
+                            // 6. Controles Inferiores (Marcador en Vivo, Pausar/Reanudar y Finalizar)
+                            bottomRecordingControls(contentWidth: contentWidth, compact: false)
+                        }
+                        .padding(.vertical, 6)
+                        .frame(width: safeScreenWidth, height: geo.size.height, alignment: .top)
+                    }
                 }
-                .padding(.vertical, 6)
-                .frame(width: safeScreenWidth, height: geo.size.height, alignment: .top)
                 .clipped()
                 .disabled(recorderService.state == .finalizing)
                 .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
@@ -75,7 +130,7 @@ struct RecordingBoothView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar") {
+                    Button(L10n.cancel) {
                         Task {
                             _ = await recorderService.stopAndFinalizeRecording(performFullPostProcessing: false)
                             dismiss()
@@ -102,7 +157,7 @@ struct RecordingBoothView: View {
             Image(systemName: "pencil")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            TextField("Título de la nota (opcional)...", text: $recorderService.liveCustomDraftTitle)
+            TextField(L10n.boothTitlePlaceholder, text: $recorderService.liveCustomDraftTitle)
                 .submitLabel(.done)
                 .font(.caption.weight(.semibold))
         }
@@ -114,10 +169,10 @@ struct RecordingBoothView: View {
 
     // MARK: - 2. Cronómetro con Milisegundos y Detector Visual en Vivo
 
-    private func chronometerAndLiveDetectorSection(contentWidth: CGFloat) -> some View {
-        VStack(spacing: 5) {
+    private func chronometerAndLiveDetectorSection(contentWidth: CGFloat, compact: Bool = false) -> some View {
+        VStack(spacing: compact ? 3 : 5) {
             Text(ExactDateFormatter.preciseChronometer(recorderService.elapsedTime, alwaysShowHours: true))
-                .font(.system(size: 36, weight: .heavy, design: .monospaced))
+                .font(.system(size: compact ? 28 : 36, weight: .heavy, design: .monospaced))
                 .foregroundStyle(recorderService.state == .paused ? .secondary : .primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -175,7 +230,7 @@ struct RecordingBoothView: View {
                             Circle()
                                 .fill(isCurrent ? .white : color)
                                 .frame(width: 6, height: 6)
-                            Text("L\(num)")
+                            Text(L10n.speakerShortBadge(num))
                                 .lineLimit(1)
                         }
                         .font(.caption.weight(.bold))
@@ -195,7 +250,7 @@ struct RecordingBoothView: View {
                     Button {
                         recorderService.triggerAcousticEventMarker(eventType)
                     } label: {
-                        Text("\(eventType.emoji) \(eventType.spanishTitle)")
+                        Text("\(eventType.emoji) \(eventType.localizedTitle)")
                             .font(.caption2.weight(.semibold))
                             .lineLimit(1)
                             .padding(.horizontal, 8)
@@ -213,7 +268,7 @@ struct RecordingBoothView: View {
 
     // MARK: - 5. Transcripción en Vivo Plegable (Ahorro de RAM y Batería por Defecto)
 
-    private func collapsibleLiveTranscriptionSection(contentWidth: CGFloat) -> some View {
+    private func collapsibleLiveTranscriptionSection(contentWidth: CGFloat, compactLandscape: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             // Botón/Interruptor para desplegar u ocultar la transcripción en vivo
             HStack(spacing: 8) {
@@ -236,8 +291,8 @@ struct RecordingBoothView: View {
 
                         Text(
                             recorderService.isLiveTranscriptionEnabled
-                                ? "Ocultar transcripción en vivo (Ahorrar batería)"
-                                : "Ver transcripción en vivo"
+                                ? L10n.boothHideLiveTranscript
+                                : L10n.boothShowLiveTranscript
                         )
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.primary)
@@ -277,10 +332,10 @@ struct RecordingBoothView: View {
                                     .padding(10)
                             } else if recorderService.liveSegments.isEmpty && recorderService.liveAcousticEvents.isEmpty {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Escuchando en español...")
+                                    Text(L10n.boothListening(SpeechTranscriptionService.activeLanguageDisplayName()))
                                         .font(.caption.weight(.bold))
                                         .foregroundStyle(PixelTheme.accentBlue)
-                                    Text("Las palabras aparecerán aquí en vivo. Puedes ocultar este panel en cualquier momento para ahorrar batería durante una clase larga.")
+                                    Text(L10n.boothLiveHint)
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -345,7 +400,7 @@ struct RecordingBoothView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(width: contentWidth)
-                    .frame(height: 155)
+                    .frame(minHeight: compactLandscape ? 64 : 155, maxHeight: compactLandscape ? .infinity : 155)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(Color(uiColor: .secondarySystemGroupedBackground))
@@ -364,8 +419,8 @@ struct RecordingBoothView: View {
 
     // MARK: - 6. Controles Inferiores Responsivos
 
-    private func bottomRecordingControls(contentWidth: CGFloat) -> some View {
-        VStack(spacing: 8) {
+    private func bottomRecordingControls(contentWidth: CGFloat, compact: Bool = false) -> some View {
+        VStack(spacing: compact ? 6 : 8) {
             if showBookmarkAddedToast {
                 HStack(spacing: 6) {
                     Image(systemName: "bookmark.fill")
@@ -381,7 +436,7 @@ struct RecordingBoothView: View {
             }
 
             HStack(spacing: 8) {
-                TextField("Nota opcional para el marcador...", text: $quickBookmarkNote)
+                TextField(L10n.boothBookmarkPlaceholder, text: $quickBookmarkNote)
                     .font(.caption)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
@@ -393,7 +448,7 @@ struct RecordingBoothView: View {
                         note: quickBookmarkNote
                     )
                     quickBookmarkNote = ""
-                    lastAddedBookmarkText = "Marcador guardado en \(bm.formattedTimestamp)"
+                    lastAddedBookmarkText = L10n.boothBookmarkSaved(bm.formattedTimestamp)
                     withAnimation {
                         showBookmarkAddedToast = true
                     }
@@ -406,7 +461,7 @@ struct RecordingBoothView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "bookmark.fill")
-                        Text("Marcador")
+                        Text(L10n.boothBookmarkButton)
                             .fontWeight(.bold)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
@@ -431,14 +486,14 @@ struct RecordingBoothView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: recorderService.state == .paused ? "play.fill" : "pause.fill")
-                        Text(recorderService.state == .paused ? "Reanudar" : "Pausar")
+                        Text(recorderService.state == .paused ? L10n.boothResume : L10n.boothPause)
                             .fontWeight(.bold)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                     }
                     .font(.subheadline)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
+                    .padding(.vertical, compact ? 10 : 13)
                     .padding(.horizontal, 10)
                     .liquidGlassCapsule()
                 }
@@ -460,7 +515,7 @@ struct RecordingBoothView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "stop.circle.fill")
                             .font(.body)
-                        Text("Finalizar y Guardar")
+                        Text(L10n.boothFinishSave)
                             .fontWeight(.bold)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
@@ -468,7 +523,7 @@ struct RecordingBoothView: View {
                     .font(.subheadline)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
+                    .padding(.vertical, compact ? 10 : 13)
                     .padding(.horizontal, 10)
                     .liquidGlassCapsule(tint: PixelTheme.accentBlue)
                     .shadow(color: PixelTheme.accentBlue.opacity(0.35), radius: 8, x: 0, y: 4)

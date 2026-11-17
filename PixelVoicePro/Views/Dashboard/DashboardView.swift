@@ -6,6 +6,9 @@ import UIKit
 /// gestor de carpetas mediante el botón `+` (para crear, mostrar u ocultar categorías con el ojito)
 /// y expansión fluida en la barra superior Liquid Glass para búsqueda global.
 struct DashboardView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
     @ObservedObject var viewModel: AppViewModel
     @ObservedObject var recorderService: AudioRecorderService
 
@@ -21,73 +24,111 @@ struct DashboardView: View {
         isSearchExpanded || !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private let folderColumns: [GridItem] = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14)
-    ]
+    private var isCompactVertical: Bool {
+        verticalSizeClass == .compact
+    }
+
+    private var isRegularCanvas: Bool {
+        horizontalSizeClass == .regular && verticalSizeClass == .regular
+    }
+
+    private var maxReadableContentWidth: CGFloat {
+        horizontalSizeClass == .regular ? 1040 : .infinity
+    }
+
+    private func adaptiveFolderColumns(for containerWidth: CGFloat, horizontalPadding: CGFloat) -> [GridItem] {
+        let spacing: CGFloat = 14
+        let constrainedWidth = horizontalSizeClass == .regular ? min(containerWidth, maxReadableContentWidth) : containerWidth
+        let usableWidth = max(240, constrainedWidth - (horizontalPadding * 2))
+
+        let columnCount: Int
+        if usableWidth < 500 {
+            // Portrait iPhones (incluyendo Zoom Grande) y iPad Slide Over: siempre 2 columnas limpias
+            columnCount = 2
+        } else if isRegularCanvas {
+            // iPad vertical u horizontal: 3 a 5 columnas balanceadas (~190–225pt por carpeta)
+            columnCount = max(3, min(5, Int((usableWidth + spacing) / 205.0)))
+        } else {
+            // iPhone en modo horizontal (Landscape): 3 a 4 columnas manteniendo el tamaño casi idéntico al vertical
+            columnCount = max(3, min(5, Int((usableWidth + spacing) / 160.0)))
+        }
+
+        return Array(repeating: GridItem(.flexible(), spacing: spacing), count: columnCount)
+    }
 
     var body: some View {
         NavigationStack(path: $viewModel.navigationPath) {
-            ZStack(alignment: .bottom) {
-                // Fondo ambiental sutil para dar refracción y profundidad real a las carpetas Liquid Glass
-                ambientGlassBackdrop
+            GeometryReader { geo in
+                let hPadding: CGFloat = horizontalSizeClass == .regular ? 28 : 16
+                let columns = adaptiveFolderColumns(for: geo.size.width, horizontalPadding: hPadding)
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Título Grande nativo alineado a la izquierda ("Voice Notes")
-                        Text("Voice Notes")
-                            .font(.largeTitle.weight(.bold))
-                            .foregroundStyle(.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 2)
+                ZStack(alignment: .bottom) {
+                    // Fondo ambiental sutil para dar refracción y profundidad real a las carpetas Liquid Glass
+                    ambientGlassBackdrop
 
-                        // Barra discreta de post-procesamiento en segundo plano
-                        if viewModel.isBackgroundProcessingActive {
-                            backgroundProcessingBanner
-                                .transition(.opacity)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: isCompactVertical ? 12 : 16) {
+                            // Título Grande nativo alineado a la izquierda ("Voice Notes")
+                            Text(verbatim: "Voice Notes")
+                                .font(isCompactVertical ? .title2.weight(.bold) : .largeTitle.weight(.bold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, isCompactVertical ? 0 : 2)
+
+                            // Barra discreta de post-procesamiento en segundo plano
+                            if viewModel.isBackgroundProcessingActive {
+                                backgroundProcessingBanner
+                                    .transition(.opacity)
+                            }
+
+                            // Resultados de búsqueda global o cuadrícula adaptativa de carpetas Liquid Glass
+                            if !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                globalDeepSearchResultsView
+                            } else {
+                                liquidGlassFoldersGridSection(columns: columns)
+                            }
                         }
-
-                        // Resultados de búsqueda global o cuadrícula de carpetas Liquid Glass
-                        if !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            globalDeepSearchResultsView
-                        } else {
-                            liquidGlassFoldersGridSection
-                        }
+                        .padding(.horizontal, hPadding)
+                        .padding(.bottom, isCompactVertical ? 90 : 112)
+                        .frame(maxWidth: maxReadableContentWidth)
+                        .frame(maxWidth: .infinity)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 112)
-                }
-                .scrollDismissesKeyboard(.interactively)
+                    .scrollDismissesKeyboard(.interactively)
 
-                // Tocar cualquier zona fuera de la barra expandida la cierra automáticamente
-                if shouldShowSearchBar && viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Color.black.opacity(0.001)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            closeSearchBar()
-                        }
-                        .zIndex(4)
-                }
+                    // Tocar cualquier zona fuera de la barra expandida la cierra automáticamente
+                    if shouldShowSearchBar && viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Color.black.opacity(0.001)
+                            .ignoresSafeArea()
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                closeSearchBar()
+                            }
+                            .zIndex(4)
+                    }
 
-                // Botón flotante circular Liquid Glass para grabar desde el Home
-                FloatingRecordButtonBar {
-                    dismissKeyboard()
-                    viewModel.startRecordingSession()
+                    // Botón flotante circular Liquid Glass para grabar desde el Home
+                    FloatingRecordButtonBar {
+                        dismissKeyboard()
+                        viewModel.startRecordingSession()
+                    }
+                    .zIndex(2)
                 }
-                .zIndex(2)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
                 morphingTopGlassBar
-                    .padding(.horizontal, 16)
-                    .padding(.top, 6)
-                    .padding(.bottom, 6)
+                    .padding(.horizontal, horizontalSizeClass == .regular ? 28 : 16)
+                    .padding(.top, isCompactVertical ? 4 : 6)
+                    .padding(.bottom, isCompactVertical ? 4 : 6)
+                    .frame(maxWidth: maxReadableContentWidth)
+                    .frame(maxWidth: .infinity)
             }
             .animation(.easeInOut(duration: 0.25), value: viewModel.isBackgroundProcessingActive)
             .onAppear {
                 isSearchFieldFocused = false
             }
-            .navigationTitle("Voice Notes")
+            .navigationTitle(Text(verbatim: "Voice Notes"))
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: FolderDestination.self) { folder in
                 FolderRecordingsView(
@@ -182,10 +223,10 @@ struct DashboardView: View {
                                 .frame(width: shouldShowSearchBar ? 28 : 42, height: 42)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Buscar en Voice Notes")
+                        .accessibilityLabel(L10n.searchAccessibility)
 
                         if shouldShowSearchBar {
-                            TextField("Buscar en Voice Notes...", text: $viewModel.globalSearchQuery)
+                            TextField(L10n.searchPrompt, text: $viewModel.globalSearchQuery)
                                 .focused($isSearchFieldFocused)
                                 .textFieldStyle(.plain)
                                 .textInputAutocapitalization(.never)
@@ -206,7 +247,7 @@ struct DashboardView: View {
                                     .frame(width: 30, height: 30)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Cerrar búsqueda")
+                            .accessibilityLabel(L10n.searchCloseAccessibility)
                             .transition(.scale.combined(with: .opacity))
                         }
                     }
@@ -232,7 +273,7 @@ struct DashboardView: View {
                         .glassEffect(.regular.interactive(), in: .circle)
                         .glassEffectID("TOP_SETTINGS_GEAR", in: topGlassNamespace)
                         .transition(.scale(scale: 0.7).combined(with: .opacity))
-                        .accessibilityLabel("Ajustes")
+                        .accessibilityLabel(L10n.settingsTitle)
                     }
                 }
             }
@@ -254,9 +295,10 @@ struct DashboardView: View {
                             .frame(width: shouldShowSearchBar ? 28 : 42, height: 42)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.searchAccessibility)
 
                     if shouldShowSearchBar {
-                        TextField("Buscar en Voice Notes...", text: $viewModel.globalSearchQuery)
+                        TextField(L10n.searchPrompt, text: $viewModel.globalSearchQuery)
                             .focused($isSearchFieldFocused)
                             .textFieldStyle(.plain)
                             .textInputAutocapitalization(.never)
@@ -272,6 +314,7 @@ struct DashboardView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(L10n.searchCloseAccessibility)
                     }
                 }
                 .padding(.horizontal, shouldShowSearchBar ? 12 : 0)
@@ -289,6 +332,7 @@ struct DashboardView: View {
                             .liquidGlassCircle()
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.settingsTitle)
                 }
             }
         }
@@ -317,8 +361,8 @@ struct DashboardView: View {
 
     // MARK: - Cuadrícula de Carpetas Cuadradas Liquid Glass
 
-    private var liquidGlassFoldersGridSection: some View {
-        LazyVGrid(columns: folderColumns, spacing: 14) {
+    private func liquidGlassFoldersGridSection(columns: [GridItem]) -> some View {
+        LazyVGrid(columns: columns, spacing: 14) {
             FolderLiquidGlassCard(
                 title: FolderDestination.all.title,
                 iconName: FolderDestination.all.iconName,
@@ -340,7 +384,7 @@ struct DashboardView: View {
             ForEach(viewModel.visibleAvailableTags) { tag in
                 let destination = FolderDestination.tag(tag)
                 FolderLiquidGlassCard(
-                    title: tag.name,
+                    title: tag.localizedName,
                     iconName: tag.iconName,
                     color: tag.color,
                     count: viewModel.recordingCount(for: destination)
@@ -349,37 +393,45 @@ struct DashboardView: View {
                 }
             }
 
-            // Botón "+" integrado limpiamente en la cuadrícula para abrir el gestor de carpetas/ojitos
+            // Botón "+" integrado con exactamente las mismas proporciones que cada carpeta
             Button {
                 showTagManagerSheet = true
             } label: {
-                VStack(spacing: 10) {
-                    ZStack {
-                        Circle()
-                            .fill(PixelTheme.accentBlue.opacity(0.14))
-                            .frame(width: 52, height: 52)
-                        Image(systemName: "plus")
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(PixelTheme.accentBlue)
+                LiquidGlassGridTile(
+                    tint: PixelTheme.accentBlue.opacity(0.08),
+                    interactive: true,
+                    alignment: .center
+                ) {
+                    VStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(PixelTheme.accentBlue.opacity(0.14))
+                                .frame(width: 46, height: 46)
+                            Image(systemName: "plus")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(PixelTheme.accentBlue)
+                        }
+
+                        VStack(spacing: 2) {
+                            Text(L10n.foldersManageTitle)
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+
+                            Text(L10n.foldersManageSubtitle)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
                     }
-
-                    Text("Carpetas")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.primary)
-
-                    Text("Crear u ocultar")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, minHeight: 148)
-                .aspectRatio(1.02, contentMode: .fit)
-                .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .liquidGlassRoundedRect(cornerRadius: 24, tint: PixelTheme.accentBlue.opacity(0.08), interactive: false)
             }
             .buttonStyle(.plain)
             .morphTransitionSource(id: "TAG_MANAGER_SOURCE", in: tagButtonNamespace)
-            .accessibilityLabel("Gestionar, crear u ocultar carpetas")
+            .accessibilityLabel(L10n.foldersManageAccessibility)
         }
     }
 
@@ -391,11 +443,11 @@ struct DashboardView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("Coincidencias Exactas (\(matches.count))", systemImage: "text.magnifyingglass")
+                Label(L10n.searchExactMatches(matches.count), systemImage: "text.magnifyingglass")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(PixelTheme.accentBlue)
                 Spacer()
-                Text("Toca para saltar al segundo")
+                Text(L10n.searchTapToJump)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -405,7 +457,7 @@ struct DashboardView: View {
                     Image(systemName: "magnifyingglass.circle")
                         .font(.title3)
                         .foregroundStyle(.secondary)
-                    Text("No se encontró \"\(viewModel.globalSearchQuery)\" en ninguna grabación.")
+                    Text(L10n.searchNoResults(viewModel.globalSearchQuery))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -430,7 +482,7 @@ struct DashboardView: View {
                                 HStack(spacing: 4) {
                                     Image(systemName: "play.fill")
                                         .font(.system(size: 8))
-                                    Text("Minuto \(match.formattedExactMinute)")
+                                    Text(L10n.searchMinuteBadge(match.formattedExactMinute))
                                         .font(.system(.caption2, design: .monospaced).weight(.bold))
                                 }
                                 .padding(.horizontal, 8)
@@ -470,7 +522,7 @@ struct DashboardView: View {
                 }
 
                 if !matchingRecordings.isEmpty {
-                    Text("Notas coincidentes (\(matchingRecordings.count))")
+                    Text(L10n.searchMatchingNotes(matchingRecordings.count))
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
@@ -511,7 +563,7 @@ struct DashboardView: View {
                     .tint(PixelTheme.accentBlue)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Procesando \(viewModel.backgroundProcessingTitle)")
+                    Text(L10n.processingBanner(viewModel.backgroundProcessingTitle))
                         .font(.caption.weight(.bold))
                         .lineLimit(1)
                     if !viewModel.backgroundProcessingStatus.isEmpty {
@@ -538,7 +590,29 @@ struct DashboardView: View {
     }
 }
 
-// MARK: - Carpeta Cuadrada Liquid Glass del Home
+// MARK: - Contenedor y Tarjeta Cuadrada Liquid Glass del Home
+
+/// Contenedor base de cuadrícula que garantiza proporciones idénticas en todas las tarjetas
+/// sin importar el tamaño de pantalla o el Zoom de pantalla (Predeterminado / Grande).
+private struct LiquidGlassGridTile<Content: View>: View {
+    let tint: Color
+    let interactive: Bool
+    let alignment: Alignment
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .aspectRatio(1.02, contentMode: .fit)
+            .overlay {
+                content()
+                    .padding(14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .liquidGlassRoundedRect(cornerRadius: 24, tint: tint, interactive: interactive)
+    }
+}
 
 private struct FolderLiquidGlassCard: View {
     let title: String
@@ -549,45 +623,51 @@ private struct FolderLiquidGlassCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top) {
-                    ZStack {
-                        Circle()
-                            .fill(color.opacity(0.22))
-                            .frame(width: 46, height: 46)
-                        Image(systemName: iconName)
-                            .font(.system(size: 21, weight: .semibold))
-                            .foregroundStyle(color)
+            LiquidGlassGridTile(
+                tint: color.opacity(0.14),
+                interactive: true,
+                alignment: .leading
+            ) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        ZStack {
+                            Circle()
+                                .fill(color.opacity(0.22))
+                                .frame(width: 46, height: 46)
+                            Image(systemName: iconName)
+                                .font(.system(size: 21, weight: .semibold))
+                                .foregroundStyle(color)
+                        }
+
+                        Spacer(minLength: 6)
+
+                        Text("\(count)")
+                            .font(.system(.subheadline, design: .monospaced).weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.primary.opacity(0.08), in: Capsule())
                     }
 
-                    Spacer()
+                    Spacer(minLength: 6)
 
-                    Text("\(count)")
-                        .font(.system(.subheadline, design: .monospaced).weight(.bold))
+                    Text(title)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .multilineTextAlignment(.leading)
+
+                    Text(L10n.folderRecordingCount(count))
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.primary.opacity(0.08), in: Capsule())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .padding(.top, 2)
                 }
-
-                Spacer(minLength: 10)
-
-                Text(title)
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                Text(count == 1 ? "1 grabación" : "\(count) grabaciones")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 148, alignment: .leading)
-            .aspectRatio(1.02, contentMode: .fit)
-            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .liquidGlassRoundedRect(cornerRadius: 24, tint: color.opacity(0.14), interactive: true)
         }
         .buttonStyle(.plain)
     }
@@ -596,29 +676,37 @@ private struct FolderLiquidGlassCard: View {
 // MARK: - Botón Flotante Circular Liquid Glass de Grabación (Compartido entre Home y Carpetas)
 
 struct FloatingRecordButtonBar: View {
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     let onTapRecord: () -> Void
 
+    private var isCompactVertical: Bool {
+        verticalSizeClass == .compact
+    }
+
     var body: some View {
+        let outerSize: CGFloat = isCompactVertical ? 64 : 74
+        let innerSize: CGFloat = isCompactVertical ? 46 : 52
+
         HStack {
             Spacer()
             Button(action: onTapRecord) {
                 ZStack {
                     Circle()
                         .fill(Color.clear)
-                        .frame(width: 74, height: 74)
+                        .frame(width: outerSize, height: outerSize)
                         .liquidGlassCircle(tint: PixelTheme.recordRed.opacity(0.16))
 
                     Circle()
                         .fill(PixelTheme.recordRed)
-                        .frame(width: 52, height: 52)
+                        .frame(width: innerSize, height: innerSize)
                         .shadow(color: PixelTheme.recordRed.opacity(0.38), radius: 10, x: 0, y: 4)
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Nueva Grabación")
+            .accessibilityLabel(L10n.newRecordingAccessibility)
             Spacer()
         }
-        .padding(.bottom, 16)
+        .padding(.bottom, isCompactVertical ? 8 : 16)
     }
 }
 
@@ -652,7 +740,7 @@ struct RecordingListCardView: View {
                         .background(PixelTheme.accentBlue.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Renombrar y etiquetar nota")
+                .accessibilityLabel(L10n.quickEditAccessibility)
 
                 Button(action: onToggleFavorite) {
                     Image(systemName: recording.isFavorite ? "star.fill" : "star")
@@ -666,18 +754,18 @@ struct RecordingListCardView: View {
                     Button {
                         onQuickRenameAndTag()
                     } label: {
-                        Label("Renombrar y Etiquetas", systemImage: "tag.fill")
+                        Label(L10n.renameAndTags, systemImage: "tag.fill")
                     }
                     Button {
                         onExport()
                     } label: {
-                        Label("Exportar (Audio / PDF / MD / TXT)", systemImage: "square.and.arrow.up")
+                        Label(L10n.exportMenuAction, systemImage: "square.and.arrow.up")
                     }
                     Divider()
                     Button(role: .destructive) {
                         onDelete()
                     } label: {
-                        Label("Eliminar Grabación", systemImage: "trash")
+                        Label(L10n.deleteRecordingAction, systemImage: "trash")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -718,7 +806,7 @@ struct RecordingListCardView: View {
                     .foregroundStyle(.primary)
 
                 if recording.isProcessingBackground {
-                    Label("Analizando...", systemImage: "sparkles")
+                    Label(L10n.processingShort, systemImage: "sparkles")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(PixelTheme.accentBlue)
                 }
@@ -755,7 +843,7 @@ struct RecordingListCardView: View {
                     ForEach(recording.tags) { tag in
                         HStack(spacing: 4) {
                             Image(systemName: tag.iconName)
-                            Text(tag.name)
+                            Text(tag.localizedName)
                         }
                         .font(.system(size: 10, weight: .bold))
                         .padding(.horizontal, 8)

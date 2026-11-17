@@ -33,6 +33,7 @@
 		A10000222700000000000001 /* RecordingBoothView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000222700000000000001 /* RecordingBoothView.swift */; };
 		A10000232700000000000001 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000232700000000000001 /* RecordingDetailView.swift */; };
 		A10000242700000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000262700000000000001 /* Assets.xcassets */; };
+		A10000302700000000000001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A20000302700000000000001 /* AppIcon.icon */; };
 		A10000252700000000000001 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000272700000000000001 /* LiveActivityManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -66,6 +67,7 @@
 		A20000242700000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PixelVoicePro/Resources/Info.plist; sourceTree = "<group>"; };
 		A20000252700000000000001 /* PixelVoicePro.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PixelVoicePro/Resources/PixelVoicePro.entitlements; sourceTree = "<group>"; };
 		A20000262700000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = PixelVoicePro/Resources/Assets.xcassets; sourceTree = "<group>"; };
+		A20000302700000000000001 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = PixelVoicePro/Resources/AppIcon.icon; sourceTree = "<group>"; };
 		A20000272700000000000001 /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/Audio/LiveActivityManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -102,6 +104,7 @@
 				A20000242700000000000001 /* Info.plist */,
 				A20000252700000000000001 /* PixelVoicePro.entitlements */,
 				A20000262700000000000001 /* Assets.xcassets */,
+				A20000302700000000000001 /* AppIcon.icon */,
 				A30000022700000000000001 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -168,6 +171,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000242700000000000001 /* Assets.xcassets in Resources */,
+				A10000302700000000000001 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -249,7 +253,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PixelVoicePro/Resources/PixelVoicePro.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2702;
+				CURRENT_PROJECT_VERSION = 2703;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PixelVoicePro/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -272,7 +276,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PixelVoicePro/Resources/PixelVoicePro.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2702;
+				CURRENT_PROJECT_VERSION = 2703;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PixelVoicePro/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

@@ -1,0 +1,139 @@
+{
+  "features" : [
+    "refractivity",
+    "specular-location"
+  ],
+  "fill-specializations" : [
+    {
+      "value" : {
+        "linear-gradient" : [
+          "display-p3:0.96000,0.97500,1.00000,1.00000",
+          "display-p3:0.86500,0.90500,0.98500,1.00000"
+        ]
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "display-p3:0.08000,0.09200,0.13200,1.00000",
+          "display-p3:0.02500,0.03000,0.05000,1.00000"
+        ]
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "blur-material" : 0.42,
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.00000,0.77000,0.98000,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.10000,0.89000,1.00000,1.00000"
+              }
+            }
+          ],
+          "glass" : true,
+          "image-name" : "wave1-cyan.svg",
+          "name" : "Wave 1 Cyan",
+          "opacity" : 0.92
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.94000,0.18000,0.62000,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:1.00000,0.27000,0.72000,1.00000"
+              }
+            }
+          ],
+          "glass" : true,
+          "image-name" : "wave2-magenta.svg",
+          "name" : "Wave 2 Magenta",
+          "opacity" : 0.92
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.10500,0.40000,1.00000,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.23000,0.54500,1.00000,1.00000"
+              }
+            }
+          ],
+          "glass" : true,
+          "image-name" : "wave3-blue.svg",
+          "name" : "Wave 3 Sapphire",
+          "opacity" : 0.95
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.03000,0.78500,0.55500,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.12000,0.92000,0.66500,1.00000"
+              }
+            }
+          ],
+          "glass" : true,
+          "image-name" : "wave4-mint.svg",
+          "name" : "Wave 4 Mint",
+          "opacity" : 0.94
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "Acoustic Waves",
+      "refractivity" : {
+        "depth" : 0.62,
+        "enabled" : true,
+        "strength" : 0.60
+      },
+      "shadow-specializations" : [
+        {
+          "value" : {
+            "kind" : "neutral",
+            "opacity" : 0.45
+          }
+        },
+        {
+          "appearance" : "light",
+          "value" : {
+            "kind" : "layer-color",
+            "opacity" : 0.42
+          }
+        }
+      ],
+      "specular" : true,
+      "specular-highlight-placement" : "outside",
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.56
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}

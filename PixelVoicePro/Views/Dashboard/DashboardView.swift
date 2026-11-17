@@ -21,89 +21,99 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
-                VStack(spacing: 0) {
-                    // 1. Buscador Global fuera del List (nunca altera el contentOffset ni congela la animación)
-                    if shouldShowSearchBar {
-                        globalSearchBarSection
-                            .padding(.horizontal, 16)
-                            .padding(.top, 4)
-                            .padding(.bottom, 8)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-
-                    // 2. Barra discreta de post-procesamiento en segundo plano
+                // 1. List como raíz para que el título grande nativo ("PixelVoice Pro") y Swipe Actions funcionen al 100%
+                List {
                     if viewModel.isBackgroundProcessingActive {
                         backgroundProcessingBanner
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 8)
-                            .transition(.opacity)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 6, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
                     }
 
-                    // 3. Filtros rápidos ([Todas], [Favoritas], [+]) y franjas horarias
                     appleMailStyleFiltersSection
-                        .padding(.horizontal, 16)
-                        .padding(.top, 2)
-                        .padding(.bottom, 6)
+                        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 6, trailing: 16))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
 
-                    // 4. Lista nativa iOS con Swipe Actions (Eliminar, Favorita, Etiquetas / Exportar) y pull-down seguro
-                    List {
-                        if !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Section {
-                                globalDeepMatchesSection
-                            }
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+                    if !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Section {
+                            globalDeepMatchesSection
                         }
-
-                        chronologicalRecordingsListRows
-
-                        Color.clear
-                            .frame(height: 92)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .environment(\.defaultMinListRowHeight, 8)
-                    .scrollBounceBehavior(.always, axes: .vertical)
-                    .scrollDismissesKeyboard(.interactively)
-                    .onSafePullDownReleaseReveal(threshold: 46.0) {
-                        if !isSearchExpanded {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            openSearchBar()
-                        }
+
+                    chronologicalRecordingsListRows
+
+                    Color.clear
+                        .frame(height: 92)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .environment(\.defaultMinListRowHeight, 8)
+                .scrollBounceBehavior(.always, axes: .vertical)
+                .scrollDismissesKeyboard(.interactively)
+                .onSafePullDownReleaseReveal(threshold: 46.0) {
+                    if !isSearchExpanded {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        openSearchBar()
                     }
                 }
 
-                // 5. Botón Flotante Circular Liquid Glass (estilo Apple Voice Memos)
+                // Tocar fuera de la barra cuando está desplegada y sin texto la cierra automáticamente
+                if shouldShowSearchBar && viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            closeSearchBar()
+                        }
+                        .zIndex(5)
+                }
+
+                // Botón Flotante Circular Liquid Glass (estilo Apple Voice Memos)
                 floatingRecordButtonBar
+                    .zIndex(2)
             }
-            .animation(.easeInOut(duration: 0.22), value: shouldShowSearchBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if shouldShowSearchBar {
+                    globalSearchBarSection
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.30, dampingFraction: 0.86), value: shouldShowSearchBar)
             .animation(.easeInOut(duration: 0.25), value: viewModel.isBackgroundProcessingActive)
             .onAppear {
                 isSearchFieldFocused = false
             }
             .navigationTitle("PixelVoice Pro")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         toggleSearchBar()
                     } label: {
-                        Image(systemName: "magnifyingglass")
+                        Image(systemName: shouldShowSearchBar ? "xmark" : "magnifyingglass")
                             .font(.body.weight(.medium))
                     }
-                    .accessibilityLabel("Buscar notas")
+                    .accessibilityLabel(shouldShowSearchBar ? "Cerrar búsqueda" : "Buscar notas")
 
-                    Button {
-                        dismissKeyboard()
-                        viewModel.isShowingSettingsSheet = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.body.weight(.medium))
+                    if !shouldShowSearchBar {
+                        Button {
+                            dismissKeyboard()
+                            viewModel.isShowingSettingsSheet = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.body.weight(.medium))
+                        }
+                        .accessibilityLabel("Ajustes")
                     }
-                    .accessibilityLabel("Ajustes")
                 }
             }
             .navigationDestination(item: $viewModel.activeNavigationTarget) { target in
@@ -235,14 +245,10 @@ struct DashboardView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        isSearchFieldFocused ? PixelTheme.accentBlue.opacity(0.45) : Color.primary.opacity(0.08),
-                        lineWidth: 1
+                Color.clear
+                    .liquidGlassCapsule(
+                        tint: isSearchFieldFocused ? PixelTheme.accentBlue.opacity(0.14) : nil,
+                        interactive: false
                     )
             )
             .task {
@@ -314,7 +320,7 @@ struct DashboardView: View {
                             .frame(width: 34, height: 34)
                             .liquidGlassCircle(interactive: false)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderless)
                     .morphTransitionSource(id: "TAG_MANAGER_SOURCE", in: tagButtonNamespace)
                     .accessibilityLabel("Seleccionar, crear u ocultar etiquetas")
                 }
@@ -787,6 +793,6 @@ private struct AppleMailFilterPill: View {
                     .strokeBorder(isSelected ? color : Color.primary.opacity(0.12), lineWidth: 1)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
     }
 }

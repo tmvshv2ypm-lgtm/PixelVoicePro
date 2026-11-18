@@ -974,7 +974,7 @@ struct RecordingListCardView: View {
         return HStack(spacing: 6) {
             Image(systemName: recording.dayPeriod.iconName)
                 .font(.caption.weight(.bold))
-                .frame(width: 24, height: 24)
+                .frame(width: 22, height: 22)
                 .background(periodColor.opacity(0.18), in: Circle())
                 .foregroundStyle(periodColor)
 
@@ -986,7 +986,7 @@ struct RecordingListCardView: View {
         }
         .padding(.leading, 4)
         .padding(.trailing, 10)
-        .padding(.vertical, 3)
+        .frame(height: 30)
         .background(periodColor.opacity(0.10), in: Capsule())
     }
 
@@ -1002,7 +1002,7 @@ struct RecordingListCardView: View {
                 .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .frame(height: 30)
         .background(themeManager.primaryAccent.opacity(0.12), in: Capsule())
     }
 

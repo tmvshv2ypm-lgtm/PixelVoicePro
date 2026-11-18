@@ -1023,25 +1023,12 @@ struct RecordingDetailView: View {
                 }
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: compact ? 8 : 10) {
-                    skipSilencePill(compact: compact)
-                    voiceIsolationPill(compact: compact)
-                    repeatPill(compact: compact)
-                }
-                VStack(spacing: 8) {
-                    HStack(spacing: compact ? 8 : 10) {
-                        skipSilencePill(compact: compact)
-                        voiceIsolationPill(compact: compact)
-                    }
-                    repeatPill(compact: compact)
-                }
-                VStack(spacing: 8) {
-                    skipSilencePill(compact: compact)
-                    voiceIsolationPill(compact: compact)
-                    repeatPill(compact: compact)
-                }
+            HStack(spacing: compact ? 6 : 8) {
+                skipSilencePill(compact: compact)
+                repeatPill(compact: compact)
+                voiceIsolationPill(compact: compact)
             }
+            .padding(.horizontal, compact ? 4 : 8)
         }
     }
 
@@ -1070,15 +1057,20 @@ struct RecordingDetailView: View {
     }
 
     private func repeatPill(compact: Bool) -> some View {
-        audioEnhancementPill(
-            title: L10n.playerRepeat,
-            systemImage: "repeat",
-            isEnabled: playerService.repeatEnabled,
-            activeTint: PixelTheme.accentIndigo,
-            compact: compact
-        ) {
+        let pillHeight: CGFloat = compact ? 32 : 34
+        return Button {
             playerService.repeatEnabled.toggle()
+        } label: {
+            Image(systemName: "repeat")
+                .font(.caption.weight(.bold))
+                .frame(width: pillHeight, height: pillHeight)
+                .liquidGlassCircle(
+                    tint: playerService.repeatEnabled ? PixelTheme.accentIndigo : nil
+                )
+                .foregroundStyle(playerService.repeatEnabled ? .white : .primary)
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.playerRepeat)
     }
 
     // MARK: - Vista Continua Tipo Nota de Transcripción (Sin IA requerida)
@@ -1284,15 +1276,15 @@ struct RecordingDetailView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: systemImage)
                 Text(title)
                     .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                    .minimumScaleFactor(0.76)
             }
             .font(.caption.weight(.bold))
-            .padding(.horizontal, 14)
-            .padding(.vertical, compact ? 8 : 9)
+            .padding(.horizontal, compact ? 10 : 13)
+            .frame(height: compact ? 32 : 34)
             .liquidGlassCapsule(
                 tint: isEnabled ? activeTint : nil
             )

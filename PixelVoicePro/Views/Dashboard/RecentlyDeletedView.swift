@@ -281,6 +281,7 @@ private struct TrashedRecordingRowCard: View {
                             .font(.system(.caption2, design: .monospaced).weight(.semibold))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.8)
 
                         Image(systemName: recording.dayPeriod.iconName)
                             .font(.system(size: 10, weight: .bold))
@@ -333,25 +334,21 @@ private struct TrashedRecordingRowCard: View {
             }
 
             HStack(spacing: 10) {
-                Button(action: onRestore) {
-                    Label(L10n.trashRestoreAction, systemImage: "arrow.uturn.backward.circle.fill")
-                        .font(.caption.weight(.bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(accentColor.opacity(0.14), in: Capsule())
-                        .foregroundStyle(accentColor)
-                }
-                .buttonStyle(.borderless)
+                trashActionButton(
+                    title: L10n.trashRestoreAction,
+                    systemImage: "arrow.uturn.backward.circle.fill",
+                    tint: accentColor,
+                    fillOpacity: 0.14,
+                    action: onRestore
+                )
 
-                Button(action: onRequestPermanentDelete) {
-                    Label(L10n.trashDeleteForeverAction, systemImage: "trash")
-                        .font(.caption.weight(.bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(PixelTheme.recordRed.opacity(0.12), in: Capsule())
-                        .foregroundStyle(PixelTheme.recordRed)
-                }
-                .buttonStyle(.borderless)
+                trashActionButton(
+                    title: L10n.trashDeleteForeverAction,
+                    systemImage: "trash",
+                    tint: PixelTheme.recordRed,
+                    fillOpacity: 0.12,
+                    action: onRequestPermanentDelete
+                )
             }
         }
         .padding(14)
@@ -364,5 +361,26 @@ private struct TrashedRecordingRowCard: View {
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 3)
+    }
+
+    private func trashActionButton(
+        title: String,
+        systemImage: String,
+        tint: Color,
+        fillOpacity: Double,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity)
+                .frame(height: 36)
+                .background(tint.opacity(fillOpacity), in: Capsule())
+                .foregroundStyle(tint)
+        }
+        .buttonStyle(.borderless)
     }
 }

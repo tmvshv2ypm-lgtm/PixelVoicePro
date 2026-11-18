@@ -83,7 +83,7 @@ struct FolderRecordingsView: View {
                                     .frame(maxWidth: horizontalSizeClass == .regular ? 860 : .infinity)
                                     Spacer(minLength: 0)
                                 }
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {

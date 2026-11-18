@@ -167,6 +167,10 @@ final class VoiceRecording {
         ExactDateFormatter.fullExactTimestamp(from: endedAt)
     }
 
+    var formattedExactDateOnly: String {
+        ExactDateFormatter.exactDayKey(from: createdAt)
+    }
+
     var formattedExactTimeOnly: String {
         ExactDateFormatter.exactTimeOnly(from: createdAt)
     }

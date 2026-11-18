@@ -852,18 +852,64 @@ struct RecordingListCardView: View {
     let onExport: () -> Void
     let onDelete: () -> Void
 
+    private var hasFooterChips: Bool {
+        !recording.tags.isEmpty || !recording.speakers.isEmpty || !recording.acousticEvents.isEmpty
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Fila 1: Título Secuencial Limpio + Botones de Acción
-            HStack(alignment: .top, spacing: 8) {
-                Text(recording.title)
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
+        VStack(alignment: .leading, spacing: 12) {
+            // Bloque 1: Título + Acciones y fila organizada de Fecha/Franja (izq) <-> Hora exacta (der)
+            VStack(alignment: .leading, spacing: 10) {
+                headerTitleAndActionsRow
+                datePeriodAndTimeRow
+            }
+
+            // Bloque 2: Bloque compacto de Duración/Estado + Mini Onda dentro de contenedor suave
+            audioStripCard
+
+            // Bloque 3: Extracto de Transcripción legible con respiro
+            if !recording.fullTranscriptText.isEmpty {
+                Text(recording.fullTranscriptText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(2.5)
                     .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .padding(.horizontal, 2)
+            }
 
-                Spacer()
+            // Bloque 4: Pie ordenado de Etiquetas, Locutores y Eventos Acústicos (solo si hay elementos)
+            if hasFooterChips {
+                footerChipsSection
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 3)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onOpen()
+        }
+    }
 
+    private var headerTitleAndActionsRow: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(recording.title)
+                .font(.headline.weight(.bold))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .lineLimit(2)
+
+            Spacer(minLength: 10)
+
+            HStack(spacing: 4) {
                 Button(action: onQuickRenameAndTag) {
                     Image(systemName: "pencil.and.outline")
                         .font(.subheadline.weight(.semibold))
@@ -906,33 +952,63 @@ struct RecordingListCardView: View {
                         .padding(6)
                 }
             }
+        }
+    }
 
-            // Fila 2: Fecha y Hora Exacta hasta el Segundo + Puro Ícono de Franja Horaria
+    private var datePeriodAndTimeRow: some View {
+        ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
-                HStack(spacing: 5) {
-                    Image(systemName: "clock.fill")
-                        .font(.caption2)
-                        .foregroundStyle(themeManager.primaryAccent)
-                    Text(recording.formattedExactCreationDate)
-                        .font(.system(.caption, design: .monospaced).weight(.bold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(themeManager.primaryAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-
-                Image(systemName: recording.dayPeriod.iconName)
-                    .font(.caption.weight(.bold))
-                    .frame(width: 28, height: 28)
-                    .background(Color(hex: recording.dayPeriod.badgeColorHex).opacity(0.16), in: Circle())
-                    .foregroundStyle(Color(hex: recording.dayPeriod.badgeColorHex))
-
-                Spacer()
+                dateWithPeriodPill
+                Spacer(minLength: 8)
+                timeBadgePill
             }
+            VStack(alignment: .leading, spacing: 6) {
+                dateWithPeriodPill
+                timeBadgePill
+            }
+        }
+    }
 
-            // Fila 3: Duración Exacta + estado en 2º plano + Marcadores
-            HStack(spacing: 12) {
+    private var dateWithPeriodPill: some View {
+        let periodColor = Color(hex: recording.dayPeriod.badgeColorHex)
+        return HStack(spacing: 6) {
+            Image(systemName: recording.dayPeriod.iconName)
+                .font(.caption.weight(.bold))
+                .frame(width: 24, height: 24)
+                .background(periodColor.opacity(0.18), in: Circle())
+                .foregroundStyle(periodColor)
+
+            Text(recording.formattedExactDateOnly)
+                .font(.system(.caption, design: .monospaced).weight(.bold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 10)
+        .padding(.vertical, 3)
+        .background(periodColor.opacity(0.10), in: Capsule())
+    }
+
+    private var timeBadgePill: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "clock.fill")
+                .font(.caption2)
+                .foregroundStyle(themeManager.primaryAccent)
+            Text(recording.formattedExactTimeOnly)
+                .font(.system(.caption, design: .monospaced).weight(.bold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(themeManager.primaryAccent.opacity(0.12), in: Capsule())
+    }
+
+    private var audioStripCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
                 Label(recording.formattedPreciseDuration, systemImage: "waveform")
                     .font(.system(.caption, design: .monospaced).weight(.semibold))
                     .foregroundStyle(.primary)
@@ -949,7 +1025,7 @@ struct RecordingListCardView: View {
                         .lineLimit(1)
                 }
 
-                Spacer()
+                Spacer(minLength: 6)
 
                 if !recording.bookmarks.isEmpty {
                     Label("\(recording.bookmarks.count)", systemImage: "bookmark.fill")
@@ -958,26 +1034,31 @@ struct RecordingListCardView: View {
                 }
             }
 
-            // Fila 4: Mini Onda de Audio + Extracto de Transcripción
-            VStack(alignment: .leading, spacing: 8) {
-                CompactCardWaveformPreview(
-                    samples: recording.waveformSamples,
-                    events: recording.acousticEvents,
-                    duration: recording.duration
-                )
+            CompactCardWaveformPreview(
+                samples: recording.waveformSamples,
+                events: recording.acousticEvents,
+                duration: recording.duration
+            )
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.05), lineWidth: 0.75)
+        )
+    }
 
-                if !recording.fullTranscriptText.isEmpty {
-                    Text(recording.fullTranscriptText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                }
-            }
+    private var footerChipsSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Divider()
+                .opacity(0.45)
 
-            // Fila 5: Chips de Etiquetas de Color, Locutores y Eventos Acústicos
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     ForEach(recording.tags) { tag in
                         let tagColor = themeManager.folderColor(for: tag)
                         HStack(spacing: 4) {
@@ -985,8 +1066,8 @@ struct RecordingListCardView: View {
                             Text(tag.localizedName)
                         }
                         .font(.system(size: 10, weight: .bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4.5)
                         .background(tagColor.opacity(0.16), in: Capsule())
                         .foregroundStyle(tagColor)
                     }
@@ -999,8 +1080,8 @@ struct RecordingListCardView: View {
                             Text(speaker.compactLabel)
                         }
                         .font(.system(size: 10, weight: .semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4.5)
                         .background(speaker.color.opacity(0.12), in: Capsule())
                         .foregroundStyle(speaker.color)
                     }
@@ -1008,27 +1089,13 @@ struct RecordingListCardView: View {
                     ForEach(recording.acousticEvents.prefix(4)) { event in
                         Text(event.compactBadgeLabel)
                             .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4.5)
                             .background(event.type.color.opacity(0.16), in: Capsule())
                             .foregroundStyle(event.type.color)
                     }
                 }
             }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 3)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onOpen()
         }
     }
 }

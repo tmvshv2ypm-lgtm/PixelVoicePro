@@ -572,6 +572,36 @@ enum L10n {
     static var aiErrorMissingConfig: String { tr("ai.error.missing_config", "No local Apple Intelligence or Cloud AI key is configured. Add a free Groq API key in Settings.") }
     static var aiErrorLocalHardware: String { tr("ai.error.local_hardware", "Apple Intelligence on-device is not supported on this hardware. Choose Automatic or Online AI in Settings.") }
 
+    // MARK: - Apariencia y Temas
+
+    static var settingsSectionAppearance: String { tr("settings.section.appearance", "Appearance & Theme") }
+    static var settingsThemeRowTitle: String { tr("settings.theme.row_title", "App Theme") }
+    static var settingsThemeRowSubtitle: String { tr("settings.theme.row_subtitle", "Preserves Light & Dark mode") }
+    static var themePickerNavTitle: String { tr("theme.picker.nav_title", "Appearance & Theme") }
+    static var themePickerPreviewHeader: String { tr("theme.picker.preview_header", "Live Preview") }
+    static var themePickerPreviewClockSample: String { tr("theme.picker.preview_clock_sample", "09:45:12 AM") }
+    static var themePickerListHeader: String { tr("theme.picker.list_header", "Available Palettes") }
+    static var themePickerFooter: String {
+        tr("theme.picker.footer", "Subtle themes update Liquid Glass folders and key accents while keeping system Light/Dark backgrounds, green iPhone switches, speaker colors, and time-of-day badges.")
+    }
+
+    static var themeOriginalTitle: String { tr("theme.original.title", "Original") }
+    static var themeOriginalSubtitle: String { tr("theme.original.subtitle", "Classic multicolor folders") }
+    static var themeBlueTitle: String { tr("theme.blue.title", "Blue") }
+    static var themeBlueSubtitle: String { tr("theme.blue.subtitle", "Sapphire, sky & cobalt tones") }
+    static var themeRoseTitle: String { tr("theme.rose.title", "Rose") }
+    static var themeRoseSubtitle: String { tr("theme.rose.subtitle", "Pastel blush, coral & raspberry") }
+    static var themePurpleTitle: String { tr("theme.purple.title", "Purple") }
+    static var themePurpleSubtitle: String { tr("theme.purple.subtitle", "Lavender, amethyst & plum") }
+    static var themeGreenTitle: String { tr("theme.green.title", "Green") }
+    static var themeGreenSubtitle: String { tr("theme.green.subtitle", "Mint, sage & soft emerald") }
+    static var themeAmberTitle: String { tr("theme.amber.title", "Amber Gold") }
+    static var themeAmberSubtitle: String { tr("theme.amber.subtitle", "Honey, champagne & warm gold") }
+    static var themeOrangeTitle: String { tr("theme.orange.title", "Orange") }
+    static var themeOrangeSubtitle: String { tr("theme.orange.subtitle", "Peach, tangerine & terracotta") }
+    static var themeCherryTitle: String { tr("theme.cherry.title", "Cherry Red") }
+    static var themeCherrySubtitle: String { tr("theme.cherry.subtitle", "Cherry, soft ruby & warm garnet") }
+
     // MARK: - Helper de unión de palabras (soporte CJK/sin espacios)
 
     /// Une tokens de transcripción respetando idiomas sin espacios entre palabras (chino, japonés, tailandés)

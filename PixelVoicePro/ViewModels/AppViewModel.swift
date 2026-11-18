@@ -71,8 +71,16 @@ final class AppViewModel: ObservableObject {
     @Published var filterFavoritesOnly: Bool = false
     @Published var filterDayPeriod: DayPeriod?
 
-    @Published var availableTags: [TagItem] = TagItem.predefinedTags
-    @Published var hiddenDefaultTagIDs: Set<String> = []
+    @Published var availableTags: [TagItem] = TagItem.predefinedTags {
+        didSet {
+            syncTagThemeSlots()
+        }
+    }
+    @Published var hiddenDefaultTagIDs: Set<String> = [] {
+        didSet {
+            syncTagThemeSlots()
+        }
+    }
     @Published var isShowingRecordingBooth: Bool = false
     @Published var pendingRecordingInitialTags: [TagItem] = []
     @Published var isShowingSettingsSheet: Bool = false
@@ -100,6 +108,11 @@ final class AppViewModel: ObservableObject {
     init() {
         loadHiddenDefaultTags()
         loadCustomTags()
+        syncTagThemeSlots()
+    }
+
+    private func syncTagThemeSlots() {
+        ThemeManager.shared.syncVisibleTagOrder(visibleAvailableTags.map(\.id))
     }
 
     func attachModelContext(_ context: ModelContext) {

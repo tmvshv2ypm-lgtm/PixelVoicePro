@@ -40,6 +40,7 @@
 		A10000332700000000000001 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A20000332700000000000001 /* InfoPlist.xcstrings */; };
 		A10000342700000000000001 /* IntelligentRefinementService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000342700000000000001 /* IntelligentRefinementService.swift */; };
 		A10000352700000000000001 /* AIRefinementSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000352700000000000001 /* AIRefinementSheet.swift */; };
+		A10000362700000000000001 /* ThemePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000362700000000000001 /* ThemePickerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -79,6 +80,7 @@
 		A20000332700000000000001 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = PixelVoicePro/Resources/InfoPlist.xcstrings; sourceTree = "<group>"; };
 		A20000342700000000000001 /* IntelligentRefinementService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Services/AI/IntelligentRefinementService.swift; sourceTree = "<group>"; };
 		A20000352700000000000001 /* AIRefinementSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Components/AIRefinementSheet.swift; sourceTree = "<group>"; };
+		A20000362700000000000001 /* ThemePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelVoicePro/Views/Settings/ThemePickerView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -110,6 +112,7 @@
 				A20000192700000000000001 /* ExportOptionsSheet.swift */,
 				A20000352700000000000001 /* AIRefinementSheet.swift */,
 				A20000202700000000000001 /* RecordingSettingsSheet.swift */,
+				A20000362700000000000001 /* ThemePickerView.swift */,
 				A20000212700000000000001 /* DashboardView.swift */,
 				A20000292700000000000001 /* FolderRecordingsView.swift */,
 				A20000222700000000000001 /* RecordingBoothView.swift */,
@@ -256,6 +259,7 @@
 				A10000192700000000000001 /* ExportOptionsSheet.swift in Sources */,
 				A10000352700000000000001 /* AIRefinementSheet.swift in Sources */,
 				A10000202700000000000001 /* RecordingSettingsSheet.swift in Sources */,
+				A10000362700000000000001 /* ThemePickerView.swift in Sources */,
 				A10000212700000000000001 /* DashboardView.swift in Sources */,
 				A10000292700000000000001 /* FolderRecordingsView.swift in Sources */,
 				A10000222700000000000001 /* RecordingBoothView.swift in Sources */,

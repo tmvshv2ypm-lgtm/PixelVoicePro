@@ -10,6 +10,7 @@ struct RecordingBoothView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @ObservedObject var viewModel: AppViewModel
     @ObservedObject var recorderService: AudioRecorderService
+    @ObservedObject private var themeManager = ThemeManager.shared
 
     @State private var selectedDraftTags: [TagItem] = []
     @State private var quickBookmarkNote: String = ""
@@ -20,6 +21,13 @@ struct RecordingBoothView: View {
     private var activeSpeakerProfile: SpeakerProfile {
         recorderService.liveSpeakers.first(where: { $0.id == recorderService.activeSpeakerId })
             ?? SpeakerProfile.createDefault(number: 1)
+    }
+
+    private var liveDetectorAccentColor: Color {
+        if recorderService.liveSpeakers.count <= 1 && activeSpeakerProfile.id == "speaker_1" {
+            return themeManager.primaryAccent
+        }
+        return activeSpeakerProfile.color
     }
 
     private var liveTranscriptScrollTrigger: String {
@@ -148,6 +156,7 @@ struct RecordingBoothView: View {
                 await beginRecordingAutomatically()
             }
         }
+        .tint(themeManager.primaryAccent)
     }
 
     // MARK: - 1. Campo de Título Rápido de la Nota (Sin bloque de cronología en cabina en vivo)
@@ -182,7 +191,7 @@ struct RecordingBoothView: View {
                 Circle()
                     .fill(
                         recorderService.liveDetectedEventType?.color
-                            ?? (recorderService.state == .recording ? activeSpeakerProfile.color : .secondary)
+                            ?? (recorderService.state == .recording ? liveDetectorAccentColor : .secondary)
                     )
                     .frame(width: 9, height: 9)
 
@@ -207,7 +216,7 @@ struct RecordingBoothView: View {
             )
             .overlay(
                 Capsule()
-                    .strokeBorder(activeSpeakerProfile.color.opacity(0.45), lineWidth: 1)
+                    .strokeBorder(liveDetectorAccentColor.opacity(0.45), lineWidth: 1)
             )
         }
         .frame(width: contentWidth)
@@ -285,7 +294,7 @@ struct RecordingBoothView: View {
                         )
                         .foregroundStyle(
                             recorderService.isLiveTranscriptionEnabled
-                                ? PixelTheme.accentBlue
+                                ? themeManager.primaryAccent
                                 : PixelTheme.successEmerald
                         )
 
@@ -334,7 +343,7 @@ struct RecordingBoothView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(L10n.boothListening(SpeechTranscriptionService.activeLanguageDisplayName()))
                                         .font(.caption.weight(.bold))
-                                        .foregroundStyle(PixelTheme.accentBlue)
+                                        .foregroundStyle(themeManager.primaryAccent)
                                     Text(L10n.boothLiveHint)
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
@@ -525,8 +534,8 @@ struct RecordingBoothView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, compact ? 10 : 13)
                     .padding(.horizontal, 10)
-                    .liquidGlassCapsule(tint: PixelTheme.accentBlue)
-                    .shadow(color: PixelTheme.accentBlue.opacity(0.35), radius: 8, x: 0, y: 4)
+                    .liquidGlassCapsule(tint: themeManager.primaryAccent)
+                    .shadow(color: themeManager.primaryAccent.opacity(0.35), radius: 8, x: 0, y: 4)
                 }
                 .buttonStyle(.plain)
             }

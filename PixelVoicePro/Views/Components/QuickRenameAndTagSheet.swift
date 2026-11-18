@@ -5,6 +5,7 @@ import SwiftUI
 struct QuickRenameAndTagSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: AppViewModel
+    @ObservedObject private var themeManager = ThemeManager.shared
     let recording: VoiceRecording
 
     @State private var editedTitle: String = ""
@@ -41,7 +42,7 @@ struct QuickRenameAndTagSheet: View {
                         // Fecha y hora exacta de creación obligatoria siempre visible debajo del título
                         HStack(spacing: 6) {
                             Image(systemName: "clock.badge.checkmark.fill")
-                                .foregroundStyle(PixelTheme.accentBlue)
+                                .foregroundStyle(themeManager.primaryAccent)
                             Text(recording.formattedExactCreationDate)
                                 .font(.system(.subheadline, design: .monospaced).weight(.semibold))
                                 .foregroundStyle(.primary)
@@ -72,6 +73,7 @@ struct QuickRenameAndTagSheet: View {
                         HStack(spacing: 8) {
                             ForEach(compactQuickTags) { tag in
                                 let isSelected = selectedTags.contains(where: { $0.id == tag.id })
+                                let tagColor = themeManager.folderColor(for: tag)
                                 Button {
                                     toggleSelection(for: tag)
                                 } label: {
@@ -88,10 +90,10 @@ struct QuickRenameAndTagSheet: View {
                                     }
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
-                                    .foregroundStyle(isSelected ? .white : tag.color)
+                                    .foregroundStyle(isSelected ? .white : tagColor)
                                     .background(
                                         Capsule()
-                                            .fill(isSelected ? tag.color : tag.color.opacity(0.14))
+                                            .fill(isSelected ? tagColor : tagColor.opacity(0.14))
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -137,12 +139,14 @@ struct QuickRenameAndTagSheet: View {
                     viewModel: viewModel,
                     mode: .assignToRecording(selectedTags: $selectedTags)
                 )
+                .tint(nil)
             }
             .onAppear {
                 editedTitle = recording.title
                 selectedTags = recording.tags
             }
         }
+        .tint(themeManager.primaryAccent)
     }
 
     private func toggleSelection(for tag: TagItem) {

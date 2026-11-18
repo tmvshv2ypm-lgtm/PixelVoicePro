@@ -67,6 +67,244 @@ enum PixelTheme {
     }
 }
 
+// MARK: - Sistema de Temas Visuales Sutiles (Conserva Modo Claro/Oscuro y Liquid Glass)
+
+/// Paletas predeterminadas sutiles que adaptan carpetas Liquid Glass y acentos principales
+/// conservando el fondo Claro/Oscuro del sistema, interruptores nativos verdes y semántica funcional.
+enum AppVisualTheme: String, CaseIterable, Identifiable, Sendable {
+    case original
+    case blue
+    case rose
+    case purple
+    case green
+    case amber
+    case orange
+    case cherry
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .original: return L10n.themeOriginalTitle
+        case .blue: return L10n.themeBlueTitle
+        case .rose: return L10n.themeRoseTitle
+        case .purple: return L10n.themePurpleTitle
+        case .green: return L10n.themeGreenTitle
+        case .amber: return L10n.themeAmberTitle
+        case .orange: return L10n.themeOrangeTitle
+        case .cherry: return L10n.themeCherryTitle
+        }
+    }
+
+    var localizedSubtitle: String {
+        switch self {
+        case .original: return L10n.themeOriginalSubtitle
+        case .blue: return L10n.themeBlueSubtitle
+        case .rose: return L10n.themeRoseSubtitle
+        case .purple: return L10n.themePurpleSubtitle
+        case .green: return L10n.themeGreenSubtitle
+        case .amber: return L10n.themeAmberSubtitle
+        case .orange: return L10n.themeOrangeSubtitle
+        case .cherry: return L10n.themeCherrySubtitle
+        }
+    }
+
+    var primaryAccentHex: String {
+        switch self {
+        case .original, .blue: return "#3B82F6"
+        case .rose: return "#E03E87"
+        case .purple: return "#8B5CF6"
+        case .green: return "#0EA571"
+        case .amber: return "#D97706"
+        case .orange: return "#EA6510"
+        case .cherry: return "#DC1E47"
+        }
+    }
+
+    var secondaryGlowHex: String {
+        switch self {
+        case .original: return "#06B6D4"
+        case .blue: return "#38BDF8"
+        case .rose: return "#F472B6"
+        case .purple: return "#A855F7"
+        case .green: return "#34D399"
+        case .amber: return "#FBBF24"
+        case .orange: return "#FB923C"
+        case .cherry: return "#FB7185"
+        }
+    }
+
+    var primaryAccent: Color {
+        Color(hex: primaryAccentHex)
+    }
+
+    var secondaryGlow: Color {
+        Color(hex: secondaryGlowHex)
+    }
+
+    /// Paleta ordenada de 14 tonos diferenciables dentro de la misma familia cromática.
+    /// Índices 0 y 1 corresponden a `Todas` y `Favoritas`; 2+ se asignan a carpetas visibles
+    /// alternando brillo, saturación y matiz para que tarjetas vecinas nunca se confundan en Liquid Glass.
+    var folderHexPalette: [String] {
+        switch self {
+        case .original:
+            return [
+                "#3B82F6", "#F59E0B", "#EC4899", "#8B5CF6", "#10B981",
+                "#06B6D4", "#14B8A6", "#F43F5E", "#F97316", "#6366F1"
+            ]
+        case .blue:
+            return [
+                "#3B82F6", "#06B6D4", "#4338CA", "#4F86C6", "#22D3EE",
+                "#1D4ED8", "#818CF8", "#7DD3FC", "#0284C7", "#6366F1",
+                "#93C5FD", "#0EA5E9", "#2563EB", "#38BDF8"
+            ]
+        case .rose:
+            return [
+                "#E03E87", "#FB7185", "#F9A8D4", "#A61C58", "#E667A2",
+                "#FDA4AF", "#DB2777", "#AD4B77", "#F2859B", "#F472B6",
+                "#BE185D", "#E88AA8", "#C45485", "#D44B7E"
+            ]
+        case .purple:
+            return [
+                "#8B5CF6", "#D946EF", "#D8B4FE", "#6366F1", "#9333EA",
+                "#F0ABFC", "#C084FC", "#6229C4", "#A855F7", "#B478D4",
+                "#4F46E5", "#7E22CE", "#A78BFA", "#6D28D9"
+            ]
+        case .green:
+            return [
+                "#10B981", "#65C466", "#9CE043", "#0D9488", "#86EFAC",
+                "#178C45", "#2DD4BF", "#4ADE80", "#0A8762", "#6EE7B7",
+                "#16A34A", "#5E9E72", "#059669", "#2E8A5B"
+            ]
+        case .amber:
+            return [
+                "#F59E0B", "#FDE047", "#A86416", "#F6AD55", "#FDE68A",
+                "#C46210", "#EAB308", "#C68B2C", "#D97706", "#FCD34D",
+                "#D49B27", "#FBBF24", "#F7C948", "#CA8A04"
+            ]
+        case .orange:
+            return [
+                "#F97316", "#F59E0B", "#B44318", "#FDBA74", "#EA580C",
+                "#E76F51", "#FFB347", "#C25E12", "#FF8A5B", "#FF9F43",
+                "#CC4D16", "#E07A3F", "#D95D39", "#FB923C"
+            ]
+        case .cherry:
+            return [
+                "#E11D48", "#FB7185", "#A11842", "#F7A1A8", "#F43F5E",
+                "#AC1B46", "#F28482", "#E85D75", "#BE123C", "#B84054",
+                "#E06C78", "#D64550", "#B02A43", "#C83E4D"
+            ]
+        }
+    }
+
+    func folderColor(atSlot slot: Int) -> Color {
+        let palette = folderHexPalette
+        guard !palette.isEmpty else { return primaryAccent }
+        return Color(hex: palette[abs(slot) % palette.count])
+    }
+
+    /// 6 muestras representativas de la variedad de tonos para las filas del selector de temas.
+    var previewSwatches: [Color] {
+        [0, 1, 2, 3, 4, 5].map { folderColor(atSlot: $0) }
+    }
+
+    /// 4 tonos para la vista previa 2x2 de carpetas (`Todas`, `Favoritas`, `Ideas`, `Microbiología`).
+    var representativeDashboardColors: [Color] {
+        switch self {
+        case .original:
+            return [
+                PixelTheme.accentBlue,
+                PixelTheme.bookmarkAmber,
+                Color(hex: "#EC4899"),
+                Color(hex: "#14B8A6")
+            ]
+        default:
+            return [0, 1, 2, 3].map { folderColor(atSlot: $0) }
+        }
+    }
+}
+
+/// Gestor reactivo del tema visual elegido en Configuración (persistente entre sesiones sin alterar SwiftData).
+@MainActor
+final class ThemeManager: ObservableObject {
+    static let shared = ThemeManager()
+    private static let storageKey = "com.pixelvoicepro.appearance.theme"
+
+    @Published var currentTheme: AppVisualTheme {
+        didSet {
+            UserDefaults.standard.set(currentTheme.rawValue, forKey: Self.storageKey)
+        }
+    }
+
+    private var visibleTagSlotByID: [String: Int] = [:]
+
+    private init() {
+        let saved = UserDefaults.standard.string(forKey: Self.storageKey)
+        self.currentTheme = saved.flatMap(AppVisualTheme.init(rawValue:)) ?? .original
+    }
+
+    var primaryAccent: Color {
+        currentTheme.primaryAccent
+    }
+
+    var secondaryGlow: Color {
+        currentTheme.secondaryGlow
+    }
+
+    var allFolderColor: Color {
+        currentTheme == .original ? PixelTheme.accentBlue : currentTheme.folderColor(atSlot: 0)
+    }
+
+    var favoritesFolderColor: Color {
+        currentTheme == .original ? PixelTheme.bookmarkAmber : currentTheme.folderColor(atSlot: 1)
+    }
+
+    var manageFoldersTileColor: Color {
+        currentTheme == .original ? PixelTheme.accentBlue : currentTheme.primaryAccent
+    }
+
+    func syncVisibleTagOrder(_ orderedVisibleTagIDs: [String]) {
+        var mapping: [String: Int] = [:]
+        mapping.reserveCapacity(orderedVisibleTagIDs.count)
+        for (index, tagID) in orderedVisibleTagIDs.enumerated() {
+            mapping[tagID] = index
+        }
+        visibleTagSlotByID = mapping
+    }
+
+    func folderColor(forDestination destination: FolderDestination) -> Color {
+        switch destination {
+        case .all:
+            return allFolderColor
+        case .favorites:
+            return favoritesFolderColor
+        case .tag(let tag):
+            return folderColor(for: tag)
+        }
+    }
+
+    func folderColor(for tag: TagItem) -> Color {
+        guard currentTheme != .original else {
+            return tag.color
+        }
+        let reservedTailCount = max(1, currentTheme.folderHexPalette.count - 2)
+        if let visibleIndex = visibleTagSlotByID[tag.id] {
+            return currentTheme.folderColor(atSlot: 2 + (visibleIndex % reservedTailCount))
+        }
+        let fallbackOffset = Int(Self.stableFNV1aHash(tag.id) % UInt64(reservedTailCount))
+        return currentTheme.folderColor(atSlot: 2 + fallbackOffset)
+    }
+
+    private static func stableFNV1aHash(_ text: String) -> UInt64 {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in text.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 1_099_511_628_211
+        }
+        return hash
+    }
+}
+
 // MARK: - Modificadores Liquid Glass Nativos (iOS 26+ con fallback elegante)
 
 extension View {

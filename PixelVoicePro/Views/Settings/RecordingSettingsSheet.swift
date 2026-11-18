@@ -7,6 +7,7 @@ struct RecordingSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: AppViewModel
     @ObservedObject var recorderService: AudioRecorderService
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var transcriptionConfig: TranscriptionConfiguration = .load()
     @State private var showGroqAppliedNotice: Bool = false
 
@@ -31,20 +32,69 @@ struct RecordingSettingsSheet: View {
             Form {
                 Section(L10n.settingsSectionStorage) {
                     HStack {
-                        Label(L10n.settingsSavedNotes, systemImage: "waveform.circle.fill")
+                        Label {
+                            Text(L10n.settingsSavedNotes)
+                        } icon: {
+                            Image(systemName: "waveform.circle.fill")
+                                .foregroundStyle(themeManager.primaryAccent)
+                        }
                         Spacer()
                         Text(L10n.groupNotesCount(viewModel.recordings.count))
                             .font(.subheadline.weight(.bold))
-                            .foregroundStyle(PixelTheme.accentBlue)
+                            .foregroundStyle(themeManager.primaryAccent)
                     }
 
                     HStack {
-                        Label(L10n.settingsTotalStorage, systemImage: "internaldrive.fill")
+                        Label {
+                            Text(L10n.settingsTotalStorage)
+                        } icon: {
+                            Image(systemName: "internaldrive.fill")
+                                .foregroundStyle(themeManager.primaryAccent)
+                        }
                         Spacer()
                         Text(viewModel.formattedTotalStorageUsed)
                             .font(.system(.subheadline, design: .monospaced).weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
+                }
+
+                Section {
+                    NavigationLink {
+                        ThemePickerView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(L10n.settingsThemeRowTitle)
+                                        .foregroundStyle(.primary)
+                                    Text(L10n.settingsThemeRowSubtitle)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "paintpalette.fill")
+                                    .foregroundStyle(themeManager.primaryAccent)
+                            }
+
+                            Spacer(minLength: 6)
+
+                            HStack(spacing: 6) {
+                                Text(themeManager.currentTheme.localizedTitle)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(themeManager.primaryAccent)
+
+                                HStack(spacing: 3) {
+                                    ForEach(Array(themeManager.currentTheme.representativeDashboardColors.enumerated()), id: \.offset) { _, color in
+                                        Circle()
+                                            .fill(color)
+                                            .frame(width: 8, height: 8)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text(L10n.settingsSectionAppearance)
                 }
 
                 Section {
@@ -95,6 +145,7 @@ struct RecordingSettingsSheet: View {
                     }
 
                     Toggle(L10n.settingsSpeechOnDevice, isOn: $transcriptionConfig.preferOnDeviceRecognition)
+                        .tint(Color(uiColor: .systemGreen))
 
                     Toggle(isOn: $transcriptionConfig.useModernSpeechAnalyzer) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -108,6 +159,7 @@ struct RecordingSettingsSheet: View {
                             .foregroundStyle(AdaptiveAICapability.isModernSpeechAnalyzerAvailable ? .green : .secondary)
                         }
                     }
+                    .tint(Color(uiColor: .systemGreen))
                     .disabled(!AdaptiveAICapability.isModernSpeechAnalyzerAvailable)
                 } header: {
                     Text(L10n.settingsSectionSpeechHeader)
@@ -131,7 +183,7 @@ struct RecordingSettingsSheet: View {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "sparkles")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(appleAIStatus.isAvailable ? PixelTheme.accentBlue : .secondary)
+                            .foregroundStyle(appleAIStatus.isAvailable ? themeManager.primaryAccent : .secondary)
                             .padding(.top, 2)
 
                         VStack(alignment: .leading, spacing: 3) {
@@ -156,6 +208,7 @@ struct RecordingSettingsSheet: View {
                     }
 
                     Toggle(L10n.settingsAIAutoRefineToggle, isOn: $transcriptionConfig.enableAIRefinementOnFinish)
+                        .tint(Color(uiColor: .systemGreen))
                         .disabled(!AdaptiveAICapability.canRunAIRefinement(config: transcriptionConfig))
                 } header: {
                     Text(L10n.settingsSectionAIHeader)
@@ -172,7 +225,7 @@ struct RecordingSettingsSheet: View {
                     } label: {
                         Label(L10n.settingsGroqPresetButton, systemImage: "bolt.circle.fill")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(PixelTheme.accentBlue)
+                            .foregroundStyle(themeManager.primaryAccent)
                     }
 
                     if showGroqAppliedNotice {
@@ -182,6 +235,7 @@ struct RecordingSettingsSheet: View {
                     }
 
                     Toggle(L10n.settingsWhisperToggle, isOn: $transcriptionConfig.enableWhisperPostProcessing)
+                        .tint(Color(uiColor: .systemGreen))
 
                     if transcriptionConfig.enableWhisperPostProcessing {
                         TextField(L10n.settingsWhisperEndpoint, text: $transcriptionConfig.whisperEndpointURL)
@@ -226,7 +280,7 @@ struct RecordingSettingsSheet: View {
                         Spacer()
                         Text(verbatim: "DD/MM/YYYY - HH:MM:SS AM/PM")
                             .font(.system(.caption, design: .monospaced).weight(.bold))
-                            .foregroundStyle(PixelTheme.accentBlue)
+                            .foregroundStyle(themeManager.primaryAccent)
                     }
                     HStack {
                         Text(L10n.settingsDateExample)
@@ -276,5 +330,6 @@ struct RecordingSettingsSheet: View {
                 }
             }
         }
+        .tint(themeManager.primaryAccent)
     }
 }

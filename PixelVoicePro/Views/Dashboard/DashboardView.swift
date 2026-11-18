@@ -11,6 +11,7 @@ struct DashboardView: View {
 
     @ObservedObject var viewModel: AppViewModel
     @ObservedObject var recorderService: AudioRecorderService
+    @ObservedObject private var themeManager = ThemeManager.shared
 
     @FocusState private var isSearchFieldFocused: Bool
     @Namespace private var tagButtonNamespace
@@ -172,6 +173,7 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showTagManagerSheet) {
                 TagManagerSheet(viewModel: viewModel, mode: .filterLibrary)
+                    .tint(nil)
                     .morphZoomSheetTransition(sourceID: "TAG_MANAGER_SOURCE", in: tagButtonNamespace)
             }
         }
@@ -185,13 +187,13 @@ struct DashboardView: View {
                 .ignoresSafeArea()
 
             Circle()
-                .fill(PixelTheme.accentBlue.opacity(0.09))
+                .fill(themeManager.primaryAccent.opacity(0.09))
                 .frame(width: 320, height: 320)
                 .blur(radius: 70)
                 .offset(x: -110, y: -220)
 
             Circle()
-                .fill(PixelTheme.accentCyan.opacity(0.07))
+                .fill(themeManager.secondaryGlow.opacity(0.07))
                 .frame(width: 280, height: 280)
                 .blur(radius: 70)
                 .offset(x: 130, y: 140)
@@ -219,7 +221,7 @@ struct DashboardView: View {
                         } label: {
                             Image(systemName: "magnifyingglass")
                                 .font(.body.weight(.semibold))
-                                .foregroundStyle(shouldShowSearchBar ? PixelTheme.accentBlue : .primary)
+                                .foregroundStyle(shouldShowSearchBar ? themeManager.primaryAccent : .primary)
                                 .frame(width: shouldShowSearchBar ? 28 : 42, height: 42)
                         }
                         .buttonStyle(.plain)
@@ -291,7 +293,7 @@ struct DashboardView: View {
                     } label: {
                         Image(systemName: "magnifyingglass")
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(shouldShowSearchBar ? PixelTheme.accentBlue : .primary)
+                            .foregroundStyle(shouldShowSearchBar ? themeManager.primaryAccent : .primary)
                             .frame(width: shouldShowSearchBar ? 28 : 42, height: 42)
                     }
                     .buttonStyle(.plain)
@@ -366,7 +368,7 @@ struct DashboardView: View {
             FolderLiquidGlassCard(
                 title: FolderDestination.all.title,
                 iconName: FolderDestination.all.iconName,
-                color: FolderDestination.all.color,
+                color: themeManager.folderColor(forDestination: .all),
                 count: viewModel.recordingCount(for: .all)
             ) {
                 viewModel.openFolder(.all)
@@ -375,7 +377,7 @@ struct DashboardView: View {
             FolderLiquidGlassCard(
                 title: FolderDestination.favorites.title,
                 iconName: FolderDestination.favorites.iconName,
-                color: FolderDestination.favorites.color,
+                color: themeManager.folderColor(forDestination: .favorites),
                 count: viewModel.recordingCount(for: .favorites)
             ) {
                 viewModel.openFolder(.favorites)
@@ -386,7 +388,7 @@ struct DashboardView: View {
                 FolderLiquidGlassCard(
                     title: tag.localizedName,
                     iconName: tag.iconName,
-                    color: tag.color,
+                    color: themeManager.folderColor(for: tag),
                     count: viewModel.recordingCount(for: destination)
                 ) {
                     viewModel.openFolder(destination)
@@ -398,18 +400,18 @@ struct DashboardView: View {
                 showTagManagerSheet = true
             } label: {
                 LiquidGlassGridTile(
-                    tint: PixelTheme.accentBlue.opacity(0.08),
+                    tint: themeManager.manageFoldersTileColor.opacity(0.08),
                     interactive: true,
                     alignment: .center
                 ) {
                     VStack(spacing: 8) {
                         ZStack {
                             Circle()
-                                .fill(PixelTheme.accentBlue.opacity(0.14))
+                                .fill(themeManager.manageFoldersTileColor.opacity(0.14))
                                 .frame(width: 46, height: 46)
                             Image(systemName: "plus")
                                 .font(.title3.weight(.bold))
-                                .foregroundStyle(PixelTheme.accentBlue)
+                                .foregroundStyle(themeManager.manageFoldersTileColor)
                         }
 
                         VStack(spacing: 2) {
@@ -445,7 +447,7 @@ struct DashboardView: View {
             HStack {
                 Label(L10n.searchExactMatches(matches.count), systemImage: "text.magnifyingglass")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(PixelTheme.accentBlue)
+                    .foregroundStyle(themeManager.primaryAccent)
                 Spacer()
                 Text(L10n.searchTapToJump)
                     .font(.caption2)
@@ -487,7 +489,7 @@ struct DashboardView: View {
                                 }
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(PixelTheme.accentBlue, in: Capsule())
+                                .background(themeManager.primaryAccent, in: Capsule())
                                 .foregroundStyle(.white)
                             }
 
@@ -499,7 +501,7 @@ struct DashboardView: View {
                                 if let speaker = match.speakerName {
                                     Text("\(speaker):")
                                         .font(.caption2.weight(.bold))
-                                        .foregroundStyle(PixelTheme.accentCyan)
+                                        .foregroundStyle(themeManager.primaryAccent)
                                 }
                                 Text("\"\(match.contextSnippet)\"")
                                     .font(.caption)
@@ -511,11 +513,11 @@ struct DashboardView: View {
                         .padding(12)
                         .background(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(PixelTheme.accentBlue.opacity(0.09))
+                                .fill(themeManager.primaryAccent.opacity(0.09))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(PixelTheme.accentBlue.opacity(0.32), lineWidth: 1)
+                                .strokeBorder(themeManager.primaryAccent.opacity(0.32), lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
@@ -560,7 +562,7 @@ struct DashboardView: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .scaleEffect(0.75)
-                    .tint(PixelTheme.accentBlue)
+                    .tint(themeManager.primaryAccent)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(L10n.processingBanner(viewModel.backgroundProcessingTitle))
@@ -578,15 +580,15 @@ struct DashboardView: View {
 
                 Text("\(Int(viewModel.backgroundProcessingProgress * 100))%")
                     .font(.system(.caption2, design: .monospaced).weight(.bold))
-                    .foregroundStyle(PixelTheme.accentBlue)
+                    .foregroundStyle(themeManager.primaryAccent)
             }
 
             ProgressView(value: viewModel.backgroundProcessingProgress, total: 1.0)
-                .tint(PixelTheme.accentBlue)
+                .tint(themeManager.primaryAccent)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
-        .liquidGlassCapsule(tint: PixelTheme.accentBlue.opacity(0.14), interactive: false)
+        .liquidGlassCapsule(tint: themeManager.primaryAccent.opacity(0.14), interactive: false)
     }
 }
 
@@ -713,6 +715,7 @@ struct FloatingRecordButtonBar: View {
 // MARK: - Tarjeta Individual de Grabación Limpia (Compartida en Carpetas y Búsqueda Global)
 
 struct RecordingListCardView: View {
+    @ObservedObject private var themeManager = ThemeManager.shared
     let recording: VoiceRecording
     let onOpen: () -> Void
     let onQuickRenameAndTag: () -> Void
@@ -735,9 +738,9 @@ struct RecordingListCardView: View {
                 Button(action: onQuickRenameAndTag) {
                     Image(systemName: "pencil.and.outline")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(PixelTheme.accentBlue)
+                        .foregroundStyle(themeManager.primaryAccent)
                         .padding(6)
-                        .background(PixelTheme.accentBlue.opacity(0.12), in: Circle())
+                        .background(themeManager.primaryAccent.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(L10n.quickEditAccessibility)
@@ -780,7 +783,7 @@ struct RecordingListCardView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "clock.fill")
                         .font(.caption2)
-                        .foregroundStyle(PixelTheme.accentBlue)
+                        .foregroundStyle(themeManager.primaryAccent)
                     Text(recording.formattedExactCreationDate)
                         .font(.system(.caption, design: .monospaced).weight(.bold))
                         .foregroundStyle(.primary)
@@ -788,7 +791,7 @@ struct RecordingListCardView: View {
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
-                .background(PixelTheme.accentBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .background(themeManager.primaryAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
                 Image(systemName: recording.dayPeriod.iconName)
                     .font(.caption.weight(.bold))
@@ -808,7 +811,7 @@ struct RecordingListCardView: View {
                 if recording.isProcessingBackground {
                     Label(L10n.processingShort, systemImage: "sparkles")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(PixelTheme.accentBlue)
+                        .foregroundStyle(themeManager.primaryAccent)
                 }
 
                 Spacer()
@@ -841,6 +844,7 @@ struct RecordingListCardView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(recording.tags) { tag in
+                        let tagColor = themeManager.folderColor(for: tag)
                         HStack(spacing: 4) {
                             Image(systemName: tag.iconName)
                             Text(tag.localizedName)
@@ -848,8 +852,8 @@ struct RecordingListCardView: View {
                         .font(.system(size: 10, weight: .bold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(tag.color.opacity(0.16), in: Capsule())
-                        .foregroundStyle(tag.color)
+                        .background(tagColor.opacity(0.16), in: Capsule())
+                        .foregroundStyle(tagColor)
                     }
 
                     ForEach(recording.speakers) { speaker in

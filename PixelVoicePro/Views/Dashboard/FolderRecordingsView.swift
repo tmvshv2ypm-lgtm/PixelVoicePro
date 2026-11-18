@@ -5,6 +5,7 @@ import SwiftUI
 struct FolderRecordingsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var viewModel: AppViewModel
+    @ObservedObject private var themeManager = ThemeManager.shared
     let folder: FolderDestination
     let onExport: (VoiceRecording) -> Void
 
@@ -43,7 +44,7 @@ struct FolderRecordingsView: View {
                     VStack(spacing: 12) {
                         Image(systemName: folder.iconName)
                             .font(.system(size: 42))
-                            .foregroundStyle(folder.color.opacity(0.75))
+                            .foregroundStyle(themeManager.folderColor(forDestination: folder).opacity(0.75))
                         Text(L10n.folderEmptyTitle(folder.title))
                             .font(.headline)
                         Text(L10n.folderEmptySubtitle)
@@ -107,7 +108,7 @@ struct FolderRecordingsView: View {
                                     } label: {
                                         Label(L10n.tags, systemImage: "folder.badge.plus")
                                     }
-                                    .tint(PixelTheme.accentBlue)
+                                    .tint(themeManager.primaryAccent)
                                 }
                                 .swipeActions(edge: .leading, allowsFullSwipe: false) {
                                     Button {
@@ -123,7 +124,7 @@ struct FolderRecordingsView: View {
                                 Spacer(minLength: 0)
                                 HStack {
                                     Image(systemName: "calendar.badge.clock")
-                                        .foregroundStyle(PixelTheme.accentBlue)
+                                        .foregroundStyle(themeManager.primaryAccent)
                                     Text(group.headerTitle)
                                         .font(.subheadline.weight(.bold))
                                         .foregroundStyle(.primary)

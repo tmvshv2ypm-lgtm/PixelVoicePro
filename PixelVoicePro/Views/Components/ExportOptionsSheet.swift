@@ -15,6 +15,7 @@ struct ActivityShareSheet: UIViewControllerRepresentable {
 /// Menú de exportación limpia para compartir solo el audio, solo la transcripción (PDF, Markdown, TXT) o el paquete completo.
 struct ExportOptionsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var themeManager = ThemeManager.shared
     let recording: VoiceRecording
 
     @State private var selectedOption: ExportFormatSelection = .transcriptPDF
@@ -31,7 +32,7 @@ struct ExportOptionsSheet: View {
                             .font(.headline)
                         Text(recording.formattedExactCreationDate)
                             .font(.system(.caption, design: .monospaced).weight(.semibold))
-                            .foregroundStyle(PixelTheme.accentBlue)
+                            .foregroundStyle(themeManager.primaryAccent)
                         Text(L10n.exportSummaryLine(duration: recording.formattedPreciseDuration, size: recording.formattedFileSize, speakersCount: recording.speakers.count))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -49,7 +50,7 @@ struct ExportOptionsSheet: View {
                             HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: option.iconName)
                                     .font(.title3)
-                                    .foregroundStyle(selectedOption == option ? PixelTheme.accentBlue : .secondary)
+                                    .foregroundStyle(selectedOption == option ? themeManager.primaryAccent : .secondary)
                                     .frame(width: 28)
 
                                 VStack(alignment: .leading, spacing: 4) {
@@ -65,7 +66,7 @@ struct ExportOptionsSheet: View {
 
                                 if selectedOption == option {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(PixelTheme.accentBlue)
+                                        .foregroundStyle(themeManager.primaryAccent)
                                         .font(.title3)
                                 }
                             }
@@ -121,6 +122,7 @@ struct ExportOptionsSheet: View {
                 ActivityShareSheet(activityItems: generatedURLs)
             }
         }
+        .tint(themeManager.primaryAccent)
     }
 
     private func prepareAndShare() {

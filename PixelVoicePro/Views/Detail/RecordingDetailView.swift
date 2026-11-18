@@ -26,6 +26,7 @@ struct RecordingDetailView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @ObservedObject var viewModel: AppViewModel
+    @ObservedObject private var themeManager = ThemeManager.shared
     let recording: VoiceRecording
     let initialSeekTimestamp: TimeInterval?
     let initialSearchKeyword: String?
@@ -62,7 +63,7 @@ struct RecordingDetailView: View {
                     HStack(spacing: 8) {
                         ProgressView()
                             .scaleEffect(0.75)
-                            .tint(PixelTheme.accentBlue)
+                            .tint(themeManager.primaryAccent)
                         Text(viewModel.backgroundProcessingStatus.isEmpty ? L10n.processingBackgroundShort : viewModel.backgroundProcessingStatus)
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
@@ -70,11 +71,11 @@ struct RecordingDetailView: View {
                         Spacer()
                         Text("\(Int(viewModel.backgroundProcessingProgress * 100))%")
                             .font(.system(.caption2, design: .monospaced).weight(.bold))
-                            .foregroundStyle(PixelTheme.accentBlue)
+                            .foregroundStyle(themeManager.primaryAccent)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
-                    .background(PixelTheme.accentBlue.opacity(0.08))
+                    .background(themeManager.primaryAccent.opacity(0.08))
                 }
 
                 // 3. Pestañas limpias sin truncar: Audio, Transcripción, Resumen, Detalles
@@ -142,6 +143,7 @@ struct RecordingDetailView: View {
         }
         .sheet(isPresented: $isShowingAIRefinementSheet) {
             AIRefinementSheet(viewModel: viewModel, recording: recording)
+                .tint(nil)
         }
         .sheet(isPresented: $isShowingSpeakerRenameSheet) {
             SpeakerRenameSheet(
@@ -151,6 +153,7 @@ struct RecordingDetailView: View {
                     viewModel.saveChanges()
                 }
             )
+            .tint(nil)
         }
         .sheet(isPresented: $isShowingQuickEditSheet) {
             QuickRenameAndTagSheet(viewModel: viewModel, recording: recording)
@@ -195,7 +198,7 @@ struct RecordingDetailView: View {
                         .padding(.vertical, 8)
                         .background(
                             Capsule()
-                                .fill(isSelected ? PixelTheme.accentBlue : Color.clear)
+                                .fill(isSelected ? themeManager.primaryAccent : Color.clear)
                         )
                         .foregroundStyle(isSelected ? .white : .primary)
                 }
@@ -216,9 +219,9 @@ struct RecordingDetailView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .fill(PixelTheme.accentBlue)
+                        .fill(themeManager.primaryAccent)
                         .frame(width: 40, height: 40)
-                        .liquidGlassCircle(tint: PixelTheme.accentBlue)
+                        .liquidGlassCircle(tint: themeManager.primaryAccent)
                     Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(.white)
@@ -240,14 +243,14 @@ struct RecordingDetailView: View {
                             .lineLimit(1)
                         Text("\(ExactDateFormatter.preciseChronometer(playerService.currentTime, alwaysShowHours: false)) / \(ExactDateFormatter.preciseChronometer(playerService.duration, alwaysShowHours: false))")
                             .font(.system(.caption2, design: .monospaced).weight(.semibold))
-                            .foregroundStyle(PixelTheme.accentBlue)
+                            .foregroundStyle(themeManager.primaryAccent)
                     }
 
                     Spacer()
 
                     Image(systemName: "waveform")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(PixelTheme.accentBlue)
+                        .foregroundStyle(themeManager.primaryAccent)
                 }
                 .contentShape(Rectangle())
             }
@@ -276,7 +279,7 @@ struct RecordingDetailView: View {
                             .minimumScaleFactor(0.72)
                         Image(systemName: "pencil.circle.fill")
                             .font(isCompactVertical ? .subheadline : .title3)
-                            .foregroundStyle(PixelTheme.accentBlue)
+                            .foregroundStyle(themeManager.primaryAccent)
                     }
                 }
                 .buttonStyle(.plain)
@@ -289,7 +292,7 @@ struct RecordingDetailView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "calendar.badge.clock")
                         .font(.caption2)
-                        .foregroundStyle(PixelTheme.accentBlue)
+                        .foregroundStyle(themeManager.primaryAccent)
                     Text(recording.formattedExactCreationDate)
                         .font(.system(.caption, design: .monospaced).weight(.bold))
                         .foregroundStyle(.primary)
@@ -308,6 +311,7 @@ struct RecordingDetailView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(recording.tags) { tag in
+                                let tagColor = themeManager.folderColor(for: tag)
                                 HStack(spacing: 4) {
                                     Image(systemName: tag.iconName)
                                     Text(tag.localizedName)
@@ -316,8 +320,8 @@ struct RecordingDetailView: View {
                                 .lineLimit(1)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(tag.color.opacity(0.15), in: Capsule())
-                                .foregroundStyle(tag.color)
+                                .background(tagColor.opacity(0.15), in: Capsule())
+                                .foregroundStyle(tagColor)
                             }
                         }
                     }
@@ -340,7 +344,7 @@ struct RecordingDetailView: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(PixelTheme.accentBlue)
+                    .foregroundStyle(themeManager.primaryAccent)
 
                 TextField(L10n.detailSearchPlaceholder, text: $localSearchQuery)
                     .focused($isLocalSearchFocused)
@@ -359,7 +363,7 @@ struct RecordingDetailView: View {
                     let hits = localSearchHits
                     Text(hits.isEmpty ? "0" : "\(currentSearchHitIndex + 1)/\(hits.count)")
                         .font(.system(.caption2, design: .monospaced).weight(.bold))
-                        .foregroundStyle(hits.isEmpty ? .red : PixelTheme.accentBlue)
+                        .foregroundStyle(hits.isEmpty ? .red : themeManager.primaryAccent)
 
                     Button {
                         guard !hits.isEmpty else { return }
@@ -435,7 +439,7 @@ struct RecordingDetailView: View {
                         VStack(spacing: 10) {
                             Image(systemName: recording.isProcessingBackground ? "sparkles" : "waveform.and.magnifyingglass")
                                 .font(.largeTitle)
-                                .foregroundStyle(recording.isProcessingBackground ? PixelTheme.accentBlue : .secondary)
+                                .foregroundStyle(recording.isProcessingBackground ? themeManager.primaryAccent : .secondary)
                             Text(
                                 recording.isProcessingBackground
                                     ? L10n.detailTranscribingBg
@@ -504,7 +508,7 @@ struct RecordingDetailView: View {
                     HStack {
                         Label(L10n.aiSummarySectionTitle, systemImage: "sparkles")
                             .font(.subheadline.weight(.bold))
-                            .foregroundStyle(PixelTheme.accentBlue)
+                            .foregroundStyle(themeManager.primaryAccent)
                         Spacer()
                         Button(L10n.toolbarRefineAI) {
                             isShowingAIRefinementSheet = true
@@ -519,7 +523,7 @@ struct RecordingDetailView: View {
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "wand.and.stars")
-                                    .foregroundStyle(PixelTheme.accentBlue)
+                                    .foregroundStyle(themeManager.primaryAccent)
                                 Text(L10n.aiSummaryEmptyHint)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -541,7 +545,7 @@ struct RecordingDetailView: View {
                             if !recording.aiRefinementEngine.isEmpty {
                                 Text(recording.aiRefinementEngine)
                                     .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(PixelTheme.accentBlue)
+                                    .foregroundStyle(themeManager.primaryAccent)
                             }
                         }
                         .padding(12)
@@ -612,7 +616,7 @@ struct RecordingDetailView: View {
                                         }
                                         Spacer()
                                         Image(systemName: "play.circle.fill")
-                                            .foregroundStyle(PixelTheme.accentBlue)
+                                            .foregroundStyle(themeManager.primaryAccent)
                                     }
                                 }
                                 .buttonStyle(.plain)
@@ -640,7 +644,7 @@ struct RecordingDetailView: View {
                         systemImage: "waveform.badge.magnifyingglass"
                     )
                     .font(.subheadline.weight(.bold))
-                    .foregroundStyle(PixelTheme.accentCyan)
+                    .foregroundStyle(themeManager.primaryAccent)
 
                     if recording.acousticEvents.isEmpty {
                         Text(L10n.detailNoAcousticEvents)
@@ -688,7 +692,7 @@ struct RecordingDetailView: View {
                     HStack {
                         Label(L10n.detailSpeakerParticipation, systemImage: "person.2.fill")
                             .font(.subheadline.weight(.bold))
-                            .foregroundStyle(PixelTheme.accentBlue)
+                            .foregroundStyle(themeManager.primaryAccent)
                         Spacer()
                         Button(L10n.detailRenameSpeakers) {
                             selectedSpeakerIdForRename = recording.speakers.first?.id
@@ -847,7 +851,7 @@ struct RecordingDetailView: View {
         HStack {
             Text(ExactDateFormatter.preciseChronometer(playerService.currentTime, alwaysShowHours: false))
                 .font(.system(.subheadline, design: .monospaced).weight(.bold))
-                .foregroundStyle(PixelTheme.accentBlue)
+                .foregroundStyle(themeManager.primaryAccent)
 
             Spacer()
 
@@ -907,10 +911,10 @@ struct RecordingDetailView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .fill(PixelTheme.accentBlue)
+                        .fill(themeManager.primaryAccent)
                         .frame(width: playSize, height: playSize)
-                        .liquidGlassCircle(tint: PixelTheme.accentBlue)
-                        .shadow(color: PixelTheme.accentBlue.opacity(0.45), radius: 14, x: 0, y: 6)
+                        .liquidGlassCircle(tint: themeManager.primaryAccent)
+                        .shadow(color: themeManager.primaryAccent.opacity(0.45), radius: 14, x: 0, y: 6)
 
                     Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
                         .font((compact ? Font.title2 : Font.title).weight(.bold))
@@ -955,7 +959,7 @@ struct RecordingDetailView: View {
                             .padding(.horizontal, compact ? 9 : 12)
                             .padding(.vertical, compact ? 6 : 8)
                             .liquidGlassCapsule(
-                                tint: selected ? PixelTheme.accentBlue : nil
+                                tint: selected ? themeManager.primaryAccent : nil
                             )
                             .foregroundStyle(selected ? .white : .primary)
                     }

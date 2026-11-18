@@ -3,6 +3,7 @@ import SwiftUI
 /// Visualizador de Línea de Tiempo con Zoom Gestual tipo CapCut (`MagnificationGesture` + `ScrollView(.horizontal)`)
 /// virtualizado en bloques de 4s para soportar clases universitarias de varias horas a 60 FPS sin límite de textura Metal.
 struct LiveBoothWaveformView: View {
+    @ObservedObject private var themeManager = ThemeManager.shared
     let waveformSamples: [Float]
     let timelineSamples: [Float]
     let spectrumBands: [Float]
@@ -74,9 +75,9 @@ struct LiveBoothWaveformView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .liquidGlassCapsule(
-                        tint: followLivePlayhead ? PixelTheme.accentBlue.opacity(0.28) : PixelTheme.recordRed.opacity(0.85)
+                        tint: followLivePlayhead ? themeManager.primaryAccent.opacity(0.28) : PixelTheme.recordRed.opacity(0.85)
                     )
-                    .foregroundStyle(followLivePlayhead ? PixelTheme.accentBlue : .white)
+                    .foregroundStyle(followLivePlayhead ? themeManager.primaryAccent : .white)
                 }
                 .buttonStyle(.plain)
 
@@ -336,6 +337,7 @@ private struct LiveWaveformTileView: View {
 /// Línea de tiempo interactiva con Zoom Gestual tipo CapCut (`MagnificationGesture` + `ScrollView(.horizontal)`)
 /// virtualizada en bloques de 4s y con diseño sin bordes para el reproductor a pantalla completa (Vista 3).
 struct InteractiveTimelineWaveformView: View {
+    @ObservedObject private var themeManager = ThemeManager.shared
     let recording: VoiceRecording
     let currentTime: TimeInterval
     let duration: TimeInterval
@@ -405,9 +407,9 @@ struct InteractiveTimelineWaveformView: View {
                         .font(.subheadline.weight(.bold))
                         .frame(width: 34, height: 34)
                         .liquidGlassCircle(
-                            tint: followPlayhead ? PixelTheme.accentBlue.opacity(0.28) : PixelTheme.accentBlue.opacity(0.85)
+                            tint: followPlayhead ? themeManager.primaryAccent.opacity(0.28) : themeManager.primaryAccent.opacity(0.85)
                         )
-                        .foregroundStyle(followPlayhead ? PixelTheme.accentBlue : .white)
+                        .foregroundStyle(followPlayhead ? themeManager.primaryAccent : .white)
                 }
                 .buttonStyle(.plain)
             }
@@ -436,6 +438,7 @@ struct InteractiveTimelineWaveformView: View {
                                     bookmarksInWindow: bookmarks.filter { $0.timestamp >= tileStart && $0.timestamp <= tileEnd },
                                     hitsInWindow: searchHits.filter { $0.timestamp >= tileStart && $0.timestamp <= tileEnd },
                                     speakers: speakers,
+                                    themeAccentColor: themeManager.primaryAccent,
                                     onSeek: onSeek
                                 )
                                 .id("PLAYBACK_TILE_\(tileIdx)")
@@ -491,6 +494,7 @@ private struct PlaybackWaveformTileView: View {
     let bookmarksInWindow: [RecordingBookmark]
     let hitsInWindow: [LocalWordSearchHit]
     let speakers: [SpeakerProfile]
+    let themeAccentColor: Color
     let onSeek: (TimeInterval) -> Void
 
     private var tileWidth: CGFloat {
@@ -648,10 +652,10 @@ private struct PlaybackWaveformTileView: View {
         if let segment = segmentsInWindow.first(where: {
             timestamp >= $0.startTime && timestamp <= $0.endTime
         }) {
-            let speakerColor = speakers.first(where: { $0.id == segment.speakerId })?.color ?? PixelTheme.accentBlue
+            let speakerColor = speakers.first(where: { $0.id == segment.speakerId })?.color ?? themeAccentColor
             return isPlayed ? speakerColor : speakerColor.opacity(0.32)
         }
-        return isPlayed ? PixelTheme.accentBlue : Color.secondary.opacity(0.28)
+        return isPlayed ? themeAccentColor : Color.secondary.opacity(0.28)
     }
 }
 
@@ -679,6 +683,7 @@ private extension View {
 
 /// Mini vista previa de onda para las tarjetas del listado principal (Dashboard).
 struct CompactCardWaveformPreview: View {
+    @ObservedObject private var themeManager = ThemeManager.shared
     let samples: [Float]
     let events: [AcousticEvent]
     let duration: TimeInterval
@@ -691,7 +696,7 @@ struct CompactCardWaveformPreview: View {
                 ForEach(Array(displaySamples.enumerated()), id: \.offset) { idx, level in
                     let t = (Double(idx) / Double(max(1, displaySamples.count))) * max(1.0, duration)
                     let eventMatch = events.first { abs($0.timestamp - t) < 0.7 }
-                    let barColor = eventMatch?.type.color ?? PixelTheme.accentBlue.opacity(0.75)
+                    let barColor = eventMatch?.type.color ?? themeManager.primaryAccent.opacity(0.75)
 
                     Capsule()
                         .fill(barColor)

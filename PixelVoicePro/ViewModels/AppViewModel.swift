@@ -66,6 +66,7 @@ enum FolderDestination: Identifiable, Hashable {
 @MainActor
 final class AppViewModel: ObservableObject {
     @Published var recordings: [VoiceRecording] = []
+    @Published var trashedRecordings: [VoiceRecording] = []
     @Published var globalSearchQuery: String = ""
     @Published var selectedTagFilter: TagItem?
     @Published var filterFavoritesOnly: Bool = false
@@ -123,7 +124,7 @@ final class AppViewModel: ObservableObject {
         self.modelContext = context
         fetchRecordings()
 
-        if recordings.isEmpty && !UserDefaults.standard.bool(forKey: didSeedSampleKey) {
+        if recordings.isEmpty && trashedRecordings.isEmpty && !UserDefaults.standard.bool(forKey: didSeedSampleKey) {
             seedInitialSampleRecordings()
             UserDefaults.standard.set(true, forKey: didSeedSampleKey)
         }
@@ -135,8 +136,22 @@ final class AppViewModel: ObservableObject {
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         if let fetched = try? context.fetch(descriptor) {
+            // Auto-purgar notas cuya retención de 30 días en Papelera ya expiró
+            var remaining: [VoiceRecording] = []
+            for rec in fetched {
+                if rec.isTrashed && rec.isExpiredInTrash {
+                    RecordingStorageService.deleteAudioFile(named: rec.audioFileName)
+                    context.delete(rec)
+                } else {
+                    remaining.append(rec)
+                }
+            }
+
+            let active = remaining.filter { !$0.isTrashed }
+            let trashed = remaining.filter { $0.isTrashed }
+
             // Ordenar de la más antigua a la más reciente para numerar secuencialmente cualquier título automático antiguo
-            let chronological = fetched.sorted { $0.createdAt < $1.createdAt }
+            let chronological = active.sorted { $0.createdAt < $1.createdAt }
             for (idx, rec) in chronological.enumerated() {
                 if rec.title.hasPrefix("Grabación de la ") || rec.title == "__AUTO_SEQUENTIAL_TITLE__" {
                     rec.title = L10n.recordingDefaultTitle(idx + 1)
@@ -144,13 +159,15 @@ final class AppViewModel: ObservableObject {
                 RecordingStorageService.ensurePlayableAudioFileExists(for: rec)
             }
             try? context.save()
-            recordings = fetched.sorted { $0.createdAt > $1.createdAt }
+            recordings = active.sorted { $0.createdAt > $1.createdAt }
+            trashedRecordings = trashed.sorted { ($0.deletedAt ?? $0.createdAt) > ($1.deletedAt ?? $1.createdAt) }
         }
     }
 
     func nextSequentialTitle() -> String {
         let knownPrefixes = Array(Set([L10n.recordingTitlePrefixCheck, "Grabación ", "Recording "]))
-        let maxExisting = recordings.compactMap { rec -> Int? in
+        let allExisting = recordings + trashedRecordings
+        let maxExisting = allExisting.compactMap { rec -> Int? in
             for prefix in knownPrefixes where rec.title.hasPrefix(prefix) {
                 let suffix = rec.title.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
                 if let parsed = Int(suffix) {
@@ -159,7 +176,7 @@ final class AppViewModel: ObservableObject {
             }
             return nil
         }.max() ?? 0
-        let nextNumber = max(recordings.count, maxExisting) + 1
+        let nextNumber = max(allExisting.count, maxExisting) + 1
         return L10n.recordingDefaultTitle(nextNumber)
     }
 
@@ -182,12 +199,43 @@ final class AppViewModel: ObservableObject {
         fetchRecordings()
     }
 
+    /// Mueve la nota a la Papelera ("Eliminadas recientemente") con retención de 30 días.
     func deleteRecording(_ recording: VoiceRecording) {
+        recording.deletedAt = Date()
+        saveChanges()
+    }
+
+    /// Restaura una nota desde la Papelera devolviéndola exactamente a sus carpetas originales.
+    func restoreRecording(_ recording: VoiceRecording) {
+        recording.deletedAt = nil
+        saveChanges()
+    }
+
+    /// Restaura todas las notas actualmente en Papelera.
+    func restoreAllFromTrash() {
+        for rec in trashedRecordings {
+            rec.deletedAt = nil
+        }
+        saveChanges()
+    }
+
+    /// Elimina definitivamente una nota (archivo físico de audio + registro SwiftData).
+    func permanentlyDeleteRecording(_ recording: VoiceRecording) {
         RecordingStorageService.deleteAudioFile(named: recording.audioFileName)
         if let context = modelContext {
             context.delete(recording)
             try? context.save()
         }
+        fetchRecordings()
+    }
+
+    /// Vacía toda la Papelera eliminando archivos físicos de audio y registros SwiftData.
+    func emptyTrash() {
+        for rec in trashedRecordings {
+            RecordingStorageService.deleteAudioFile(named: rec.audioFileName)
+            modelContext?.delete(rec)
+        }
+        try? modelContext?.save()
         fetchRecordings()
     }
 
@@ -646,11 +694,19 @@ final class AppViewModel: ObservableObject {
     }
 
     var totalStorageBytesUsed: Int64 {
-        recordings.reduce(0) { $0 + $1.fileSizeBytes }
+        (recordings + trashedRecordings).reduce(0) { $0 + $1.fileSizeBytes }
     }
 
     var formattedTotalStorageUsed: String {
         ExactDateFormatter.formattedFileSize(bytes: totalStorageBytesUsed)
+    }
+
+    var trashedStorageBytesUsed: Int64 {
+        trashedRecordings.reduce(0) { $0 + $1.fileSizeBytes }
+    }
+
+    var formattedTrashedStorageUsed: String {
+        ExactDateFormatter.formattedFileSize(bytes: trashedStorageBytesUsed)
     }
 
     // MARK: - Persistencia de Etiquetas y Semilla Inicial

@@ -93,15 +93,20 @@ struct RecordingBoothView: View {
                     } else {
                         let maxRegularWidth: CGFloat = horizontalSizeClass == .regular ? 760.0 : (safeScreenWidth - 32.0)
                         let contentWidth = min(safeScreenWidth - 32.0, maxRegularWidth)
+                        let isTranscriptOpen = recorderService.isLiveTranscriptionEnabled
+                        let compactCanvasHeight: CGFloat = geo.size.height < 690 ? 86 : 96
+                        let compactWaveTotalMaxHeight: CGFloat = compactCanvasHeight + 40
 
-                        VStack(spacing: 10) {
+                        VStack(spacing: isTranscriptOpen ? 8 : 10) {
                             // 1. Título opcional rápido de la nota (sin cronología de fecha/hora en cabina)
                             topExactMetadataBanner(contentWidth: contentWidth)
 
                             // 2. Cronómetro de Alta Precisión con Milisegundos (HH:MM:SS.cc) + Detector Visual de Eventos
                             chronometerAndLiveDetectorSection(contentWidth: contentWidth, compact: false)
 
-                            // 3. Línea de Tiempo CapCut (se expande dinámicamente en Modo Ahorro cuando la transcripción está oculta)
+                            // 3. Línea de Tiempo CapCut:
+                            //    - Oculta la transcripción: se expande verticalmente al máximo
+                            //    - Desplegada la transcripción: se compacta suavemente para ceder espacio al texto en vivo
                             LiveBoothWaveformView(
                                 waveformSamples: recorderService.liveWaveformWindow,
                                 timelineSamples: recorderService.liveTimelineSamples,
@@ -113,18 +118,19 @@ struct RecordingBoothView: View {
                                 liveBookmarks: recorderService.liveBookmarks,
                                 liveSpeakerTurns: recorderService.liveSpeakerTurns,
                                 speakers: recorderService.liveSpeakers,
-                                expandVertically: !recorderService.isLiveTranscriptionEnabled
+                                expandVertically: !isTranscriptOpen,
+                                minCanvasHeight: isTranscriptOpen ? compactCanvasHeight : 132
                             )
                             .frame(width: contentWidth)
-                            .frame(maxHeight: recorderService.isLiveTranscriptionEnabled ? 205 : .infinity)
+                            .frame(maxHeight: isTranscriptOpen ? compactWaveTotalMaxHeight : .infinity)
 
                             // 4. Barra compacta de locutores y eventos acústicos
                             liveSpeakersAndAcousticQuickBar(contentWidth: contentWidth)
 
-                            // 5. Control de Transcripción en Vivo Plegable (sin caja vacía al ocultar)
+                            // 5. Control de Transcripción en Vivo Plegable (expande todo el espacio disponible hasta los controles inferiores)
                             collapsibleLiveTranscriptionSection(contentWidth: contentWidth, compactLandscape: false)
 
-                            // 6. Controles Inferiores (Marcador en Vivo, Pausar/Reanudar y Finalizar)
+                            // 6. Controles Inferiores (Marcador en Vivo, Pausar/Reanudar y Finalizar) siempre anclados abajo
                             bottomRecordingControls(contentWidth: contentWidth, compact: false)
                         }
                         .padding(.vertical, 6)
@@ -339,14 +345,32 @@ struct RecordingBoothView: View {
                                     .font(.caption)
                                     .foregroundStyle(.red)
                                     .padding(10)
-                            } else if recorderService.liveSegments.isEmpty && recorderService.liveAcousticEvents.isEmpty {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(L10n.boothListening(SpeechTranscriptionService.activeLanguageDisplayName()))
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(themeManager.primaryAccent)
-                                    Text(L10n.boothLiveHint)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                            } else if recorderService.liveSegments.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(L10n.boothListening(SpeechTranscriptionService.activeLanguageDisplayName()))
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(themeManager.primaryAccent)
+                                        Text(L10n.boothLiveHint)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    if !recorderService.liveAcousticEvents.isEmpty {
+                                        ScrollView(.horizontal, showsIndicators: false) {
+                                            HStack(spacing: 6) {
+                                                ForEach(recorderService.liveAcousticEvents.suffix(6)) { ev in
+                                                    Text(ev.formattedInlineTag)
+                                                        .font(.caption2.weight(.bold))
+                                                        .lineLimit(1)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 3)
+                                                        .background(ev.type.color.opacity(0.18), in: Capsule())
+                                                        .foregroundStyle(ev.type.color)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 .padding(10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -409,7 +433,7 @@ struct RecordingBoothView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(width: contentWidth)
-                    .frame(minHeight: compactLandscape ? 64 : 155, maxHeight: compactLandscape ? .infinity : 155)
+                    .frame(minHeight: compactLandscape ? 64 : 130, maxHeight: .infinity)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(Color(uiColor: .secondarySystemGroupedBackground))
@@ -424,6 +448,7 @@ struct RecordingBoothView: View {
             }
         }
         .frame(width: contentWidth)
+        .frame(maxHeight: recorderService.isLiveTranscriptionEnabled ? .infinity : nil)
     }
 
     // MARK: - 6. Controles Inferiores Responsivos

@@ -175,7 +175,7 @@ struct LiveBoothWaveformView: View {
                     }
                 }
             }
-            .frame(minHeight: minCanvasHeight, maxHeight: expandVertically ? .infinity : 164)
+            .frame(minHeight: minCanvasHeight, maxHeight: expandVertically ? .infinity : minCanvasHeight)
             .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }

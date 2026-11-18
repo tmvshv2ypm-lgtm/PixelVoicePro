@@ -602,6 +602,47 @@ enum L10n {
     static var themeCherryTitle: String { tr("theme.cherry.title", "Cherry Red") }
     static var themeCherrySubtitle: String { tr("theme.cherry.subtitle", "Cherry, soft ruby & warm garnet") }
 
+    // MARK: - Papelera (Eliminadas recientemente)
+
+    static var trashHomeTitle: String { tr("trash.home.title", "Recently Deleted") }
+    static var trashHomeSubtitle: String { tr("trash.home.subtitle", "Removed permanently after 30 days") }
+    static var trashNavTitle: String { tr("trash.nav.title", "Recently Deleted") }
+    static func trashInfoBanner(count: Int, size: String, days: Int) -> String {
+        fmt("trash.info_banner", "%1$@ recording(s) · %2$@ recoverable. Notes are permanently removed after %3$@ days.", "\(count)", size, "\(days)")
+    }
+    static func trashDaysLeft(_ days: Int) -> String {
+        if days <= 0 {
+            return tr("trash.expires_today", "Expires today")
+        }
+        if days == 1 {
+            return tr("trash.days_left.singular", "1 day left")
+        }
+        return fmt("trash.days_left.plural", "%@ days left", "\(days)")
+    }
+    static var trashRestoreAction: String { tr("trash.action.restore", "Restore") }
+    static var trashRestoreAllAction: String { tr("trash.action.restore_all", "Restore All") }
+    static var trashDeleteForeverAction: String { tr("trash.action.delete_forever", "Delete Permanently") }
+    static var trashEmptyAction: String { tr("trash.action.empty", "Empty Trash") }
+    static var trashEmptyTitle: String { tr("trash.empty.title", "Trash is Empty") }
+    static var trashEmptySubtitle: String {
+        tr("trash.empty.subtitle", "Deleted recordings are kept here for 30 days so you can restore them anytime.")
+    }
+    static func trashConfirmDeleteTitle(_ title: String) -> String {
+        fmt("trash.confirm.delete_title", "Delete \"%@\" permanently?", title)
+    }
+    static var trashConfirmDeleteMessage: String {
+        tr("trash.confirm.delete_message", "This audio file and its transcript will be permanently deleted and cannot be recovered.")
+    }
+    static func trashConfirmEmptyTitle(count: Int, size: String) -> String {
+        fmt("trash.confirm.empty_title", "Permanently delete %1$@ recording(s) (%2$@)?", "\(count)", size)
+    }
+    static func trashConfirmRestoreAllTitle(count: Int) -> String {
+        fmt("trash.confirm.restore_all_title", "Restore all %@ recording(s)?", "\(count)")
+    }
+    static var trashRestoreAllMessage: String {
+        tr("trash.confirm.restore_all_message", "All notes will return to All and their original folders.")
+    }
+
     // MARK: - Helper de unión de palabras (soporte CJK/sin espacios)
 
     /// Une tokens de transcripción respetando idiomas sin espacios entre palabras (chino, japonés, tailandés)

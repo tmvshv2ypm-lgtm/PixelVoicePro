@@ -34,6 +34,8 @@ final class VoiceRecording {
     var transcriptionEngineUsed: String
     var aiSummaryText: String = ""
     var aiRefinementEngine: String = ""
+    /// Fecha en que la nota fue movida a Papelera (`nil` = nota activa en biblioteca).
+    var deletedAt: Date? = nil
 
     /// Texto completo plano indexable para búsquedas globales ultrarrápidas
     var fullTranscriptText: String
@@ -142,6 +144,32 @@ final class VoiceRecording {
 
     var formattedExactTimeOnly: String {
         ExactDateFormatter.exactTimeOnly(from: createdAt)
+    }
+
+    // MARK: - Papelera y Retención de 30 Días
+
+    static let trashRetentionDays: Int = 30
+
+    var isTrashed: Bool {
+        deletedAt != nil
+    }
+
+    var trashExpirationDate: Date? {
+        guard let deletedAt else { return nil }
+        return Calendar.current.date(byAdding: .day, value: Self.trashRetentionDays, to: deletedAt)
+            ?? deletedAt.addingTimeInterval(TimeInterval(Self.trashRetentionDays) * 86_400)
+    }
+
+    var daysRemainingInTrash: Int {
+        guard let expiration = trashExpirationDate else { return Self.trashRetentionDays }
+        let secondsRemaining = expiration.timeIntervalSinceNow
+        if secondsRemaining <= 0 { return 0 }
+        return min(Self.trashRetentionDays, max(1, Int(ceil(secondsRemaining / 86_400.0))))
+    }
+
+    var isExpiredInTrash: Bool {
+        guard let expiration = trashExpirationDate else { return false }
+        return Date() >= expiration
     }
 
     var formattedDuration: String {

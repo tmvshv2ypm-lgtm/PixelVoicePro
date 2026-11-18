@@ -88,7 +88,15 @@ struct DashboardView: View {
                             if !viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 globalDeepSearchResultsView
                             } else {
-                                liquidGlassFoldersGridSection(columns: columns)
+                                VStack(spacing: 14) {
+                                    liquidGlassFoldersGridSection(columns: columns)
+
+                                    if !viewModel.trashedRecordings.isEmpty {
+                                        recentlyDeletedHomePill
+                                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                                    }
+                                }
+                                .animation(.spring(response: 0.30, dampingFraction: 0.86), value: viewModel.trashedRecordings.isEmpty)
                             }
                         }
                         .padding(.horizontal, hPadding)
@@ -435,6 +443,55 @@ struct DashboardView: View {
             .morphTransitionSource(id: "TAG_MANAGER_SOURCE", in: tagButtonNamespace)
             .accessibilityLabel(L10n.foldersManageAccessibility)
         }
+    }
+
+    private var recentlyDeletedHomePill: some View {
+        NavigationLink {
+            RecentlyDeletedView(viewModel: viewModel)
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(PixelTheme.recordRed.opacity(0.14))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "trash.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(PixelTheme.recordRed)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(L10n.trashHomeTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(L10n.trashHomeSubtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 6)
+
+                HStack(spacing: 6) {
+                    Text("\(viewModel.trashedRecordings.count)")
+                        .font(.system(.caption, design: .monospaced).weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.08), in: Capsule())
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .liquidGlassRoundedRect(cornerRadius: 18, tint: PixelTheme.recordRed.opacity(0.07), interactive: true)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Resultados de Búsqueda Global

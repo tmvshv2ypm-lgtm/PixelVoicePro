@@ -8,6 +8,11 @@ struct RecordingSettingsSheet: View {
     @ObservedObject var viewModel: AppViewModel
     @ObservedObject var recorderService: AudioRecorderService
     @State private var transcriptionConfig: TranscriptionConfiguration = .load()
+    @State private var showGroqAppliedNotice: Bool = false
+
+    private var appleAIStatus: AppleIntelligenceAvailabilityStatus {
+        AdaptiveAICapability.appleIntelligenceStatus
+    }
 
     private var speechLocaleOptions: [(id: String, name: String)] {
         SpeechTranscriptionService.availableSpeechLocaleOptions()
@@ -90,6 +95,20 @@ struct RecordingSettingsSheet: View {
                     }
 
                     Toggle(L10n.settingsSpeechOnDevice, isOn: $transcriptionConfig.preferOnDeviceRecognition)
+
+                    Toggle(isOn: $transcriptionConfig.useModernSpeechAnalyzer) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.settingsSpeechModernEngine)
+                            Text(
+                                AdaptiveAICapability.isModernSpeechAnalyzerAvailable
+                                    ? L10n.settingsSpeechModernEngineReady
+                                    : L10n.settingsSpeechModernEngineFallback
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(AdaptiveAICapability.isModernSpeechAnalyzerAvailable ? .green : .secondary)
+                        }
+                    }
+                    .disabled(!AdaptiveAICapability.isModernSpeechAnalyzerAvailable)
                 } header: {
                     Text(L10n.settingsSectionSpeechHeader)
                 } footer: {
@@ -97,6 +116,71 @@ struct RecordingSettingsSheet: View {
                 }
 
                 Section {
+                    Picker(L10n.settingsAcousticSensitivity, selection: $transcriptionConfig.acousticSensitivity) {
+                        ForEach(TranscriptionConfiguration.AcousticSensitivityLevel.allCases) { level in
+                            Text(level.localizedTitle).tag(level)
+                        }
+                    }
+                } header: {
+                    Text(L10n.settingsSectionAcousticHeader)
+                } footer: {
+                    Text(L10n.settingsSectionAcousticFooter)
+                }
+
+                Section {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "sparkles")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(appleAIStatus.isAvailable ? PixelTheme.accentBlue : .secondary)
+                            .padding(.top, 2)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(L10n.settingsAILocalToggle)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(appleAIStatus.isHardwareEligible ? .primary : .secondary)
+                            Text(appleAIStatus.localizedStatusMessage)
+                                .font(.caption2)
+                                .foregroundStyle(appleAIStatus.isAvailable ? .green : .secondary)
+                        }
+                    }
+                    .opacity(appleAIStatus.isHardwareEligible ? 1.0 : 0.65)
+                    .disabled(!appleAIStatus.isHardwareEligible)
+
+                    Picker(L10n.settingsAIProviderPicker, selection: $transcriptionConfig.aiRefinementProvider) {
+                        Text(L10n.aiProviderAutomatic)
+                            .tag(TranscriptionConfiguration.AIRefinementProviderPreference.automatic)
+                        Text(L10n.aiProviderAppleLocal)
+                            .tag(TranscriptionConfiguration.AIRefinementProviderPreference.appleIntelligenceLocal)
+                        Text(L10n.aiProviderCloud)
+                            .tag(TranscriptionConfiguration.AIRefinementProviderPreference.cloudOpenAICompatible)
+                    }
+
+                    Toggle(L10n.settingsAIAutoRefineToggle, isOn: $transcriptionConfig.enableAIRefinementOnFinish)
+                        .disabled(!AdaptiveAICapability.canRunAIRefinement(config: transcriptionConfig))
+                } header: {
+                    Text(L10n.settingsSectionAIHeader)
+                } footer: {
+                    Text(L10n.settingsSectionAIFooter)
+                }
+
+                Section {
+                    Button {
+                        transcriptionConfig.applyGroqFreePreset()
+                        transcriptionConfig.enableWhisperPostProcessing = true
+                        transcriptionConfig.save()
+                        showGroqAppliedNotice = true
+                    } label: {
+                        Label(L10n.settingsGroqPresetButton, systemImage: "bolt.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(PixelTheme.accentBlue)
+                    }
+
+                    if showGroqAppliedNotice {
+                        Text(L10n.settingsGroqPresetApplied)
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+
                     Toggle(L10n.settingsWhisperToggle, isOn: $transcriptionConfig.enableWhisperPostProcessing)
 
                     if transcriptionConfig.enableWhisperPostProcessing {
@@ -116,6 +200,24 @@ struct RecordingSettingsSheet: View {
                     Text(L10n.settingsSectionWhisperHeader)
                 } footer: {
                     Text(L10n.settingsSectionWhisperFooter)
+                }
+
+                Section {
+                    TextField(L10n.settingsAIChatEndpoint, text: $transcriptionConfig.aiChatEndpointURL)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.caption)
+
+                    TextField(L10n.settingsAIChatModel, text: $transcriptionConfig.aiChatModelName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    SecureField(L10n.settingsAIChatAPIKey, text: $transcriptionConfig.aiChatAPIKey)
+                } header: {
+                    Text(L10n.settingsAIChatHeader)
+                } footer: {
+                    Text(L10n.settingsAIChatFooter)
                 }
 
                 Section(L10n.settingsSectionDates) {
@@ -144,6 +246,24 @@ struct RecordingSettingsSheet: View {
                 transcriptionConfig.save()
             }
             .onChange(of: transcriptionConfig.enableWhisperPostProcessing) { _, _ in
+                transcriptionConfig.save()
+            }
+            .onChange(of: transcriptionConfig.useModernSpeechAnalyzer) { _, _ in
+                transcriptionConfig.save()
+            }
+            .onChange(of: transcriptionConfig.acousticSensitivity) { _, _ in
+                transcriptionConfig.save()
+            }
+            .onChange(of: transcriptionConfig.enableAIRefinementOnFinish) { _, _ in
+                transcriptionConfig.save()
+            }
+            .onChange(of: transcriptionConfig.aiRefinementProvider) { _, newValue in
+                if newValue == .appleIntelligenceLocal && !appleAIStatus.isHardwareEligible {
+                    transcriptionConfig.aiRefinementProvider = .automatic
+                }
+                transcriptionConfig.save()
+            }
+            .onDisappear {
                 transcriptionConfig.save()
             }
             .toolbar {

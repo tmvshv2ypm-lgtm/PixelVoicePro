@@ -44,6 +44,7 @@ struct RecordingDetailView: View {
     @State private var isShowingSpeakerRenameSheet: Bool = false
     @State private var isShowingQuickEditSheet: Bool = false
     @State private var isShowingExportSheet: Bool = false
+    @State private var isShowingAIRefinementSheet: Bool = false
     @State private var newPlaybackBookmarkLabel: String = ""
 
     private var localSearchHits: [LocalWordSearchHit] {
@@ -120,6 +121,12 @@ struct RecordingDetailView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
+                    isShowingAIRefinementSheet = true
+                } label: {
+                    Label(L10n.toolbarRefineAI, systemImage: "sparkles")
+                }
+
+                Button {
                     selectedSpeakerIdForRename = recording.speakers.first?.id
                     isShowingSpeakerRenameSheet = true
                 } label: {
@@ -132,6 +139,9 @@ struct RecordingDetailView: View {
                     Label(L10n.export, systemImage: "square.and.arrow.up")
                 }
             }
+        }
+        .sheet(isPresented: $isShowingAIRefinementSheet) {
+            AIRefinementSheet(viewModel: viewModel, recording: recording)
         }
         .sheet(isPresented: $isShowingSpeakerRenameSheet) {
             SpeakerRenameSheet(
@@ -489,6 +499,56 @@ struct RecordingDetailView: View {
     private var summaryAndBookmarksTabView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                // 0. Resumen Inteligente / Post-Procesamiento con IA bajo demanda
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Label(L10n.aiSummarySectionTitle, systemImage: "sparkles")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(PixelTheme.accentBlue)
+                        Spacer()
+                        Button(L10n.toolbarRefineAI) {
+                            isShowingAIRefinementSheet = true
+                        }
+                        .font(.caption.weight(.bold))
+                    }
+
+                    let trimmedSummary = recording.aiSummaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmedSummary.isEmpty {
+                        Button {
+                            isShowingAIRefinementSheet = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "wand.and.stars")
+                                    .foregroundStyle(PixelTheme.accentBlue)
+                                Text(L10n.aiSummaryEmptyHint)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.leading)
+                                Spacer()
+                            }
+                            .padding(12)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(trimmedSummary)
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            if !recording.aiRefinementEngine.isEmpty {
+                                Text(recording.aiRefinementEngine)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(PixelTheme.accentBlue)
+                            }
+                        }
+                        .padding(12)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+
                 // 1. Añadir nuevo marcador en el segundo actual de reproducción
                 VStack(alignment: .leading, spacing: 8) {
                     Label(

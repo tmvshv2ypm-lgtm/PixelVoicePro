@@ -130,6 +130,14 @@ enum ExportService {
         }
         lines.append("")
 
+        let trimmedSummary = recording.aiSummaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedSummary.isEmpty {
+            lines.append("## ✨ \(L10n.exportSummarySectionTitle)")
+            lines.append("")
+            lines.append(trimmedSummary)
+            lines.append("")
+        }
+
         if !recording.speakers.isEmpty {
             lines.append(L10n.exportMDSpeakersHeading)
             for spk in recording.speakers {
@@ -211,6 +219,13 @@ enum ExportService {
         }
         lines.append(separator)
         lines.append("")
+
+        let trimmedSummary = recording.aiSummaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedSummary.isEmpty {
+            lines.append("[\(L10n.exportSummarySectionTitle.uppercased())]")
+            lines.append(trimmedSummary)
+            lines.append("")
+        }
 
         if !recording.speakers.isEmpty {
             lines.append(L10n.exportTXTSpeakersHeader)
@@ -349,6 +364,22 @@ enum ExportService {
                     font: .systemFont(ofSize: 10.5, weight: .semibold),
                     color: Color.uiColor(fromHex: "#334155"),
                     spacingAfter: 14
+                )
+            }
+
+            let trimmedSummary = recording.aiSummaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedSummary.isEmpty {
+                drawText(
+                    L10n.exportSummarySectionTitle,
+                    font: .systemFont(ofSize: 12, weight: .bold),
+                    color: Color.uiColor(fromHex: "#3B82F6"),
+                    spacingAfter: 4
+                )
+                drawText(
+                    trimmedSummary,
+                    font: .systemFont(ofSize: 10.5, weight: .regular),
+                    color: .black,
+                    spacingAfter: 12
                 )
             }
 

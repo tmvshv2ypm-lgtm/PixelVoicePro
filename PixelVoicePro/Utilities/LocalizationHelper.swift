@@ -491,6 +491,87 @@ enum L10n {
     static var sample3BM1Label: String { tr("sample3.bm1.label", "Top priority: Exact timestamps") }
     static var sample3BM1Note: String { tr("sample3.bm1.note", "Never use ambiguous relative dates") }
 
+    // MARK: - IA Adaptativa, SpeechAnalyzer y Sensibilidad Acústica
+
+    static var settingsSectionAcousticHeader: String { tr("settings.section.acoustic_header", "Acoustic Event Sensitivity") }
+    static var settingsSectionAcousticFooter: String {
+        tr("settings.section.acoustic_footer", "Adjust how easily laughter, sighs, coughs, and long pauses are detected. Higher sensitivity captures softer reactions and lets you re-scan existing notes.")
+    }
+    static var settingsAcousticSensitivity: String { tr("settings.acoustic_sensitivity", "Detection Sensitivity") }
+    static var acousticSensitivityConservative: String { tr("acoustic.sensitivity.conservative", "Conservative (Standard)") }
+    static var acousticSensitivityBalanced: String { tr("acoustic.sensitivity.balanced", "Balanced (Recommended)") }
+    static var acousticSensitivityHigh: String { tr("acoustic.sensitivity.high", "High (Laughs & Sighs)") }
+    static var settingsSpeechModernEngine: String { tr("settings.speech_modern_engine", "Use Modern Apple SpeechAnalyzer (iOS 26+)") }
+    static var settingsSpeechModernEngineReady: String { tr("settings.speech_modern_engine_ready", "Supported on this iPhone for full-audio transcription") }
+    static var settingsSpeechModernEngineFallback: String { tr("settings.speech_modern_engine_fallback", "Using classic 45s Speech engine on this iOS version") }
+
+    static var settingsSectionAIHeader: String { tr("settings.section.ai_header", "Adaptive Intelligence (On-Device & Cloud)") }
+    static var settingsSectionAIFooter: String {
+        tr("settings.section.ai_footer", "On iPhone 15 Pro, 16, and 17 Pro Max, Apple Intelligence runs locally offline for free. On older devices like iPhone 11 Pro Max, the local switch stays disabled and you can configure a free online model (such as Groq) or local Wi-Fi server.")
+    }
+    static var settingsAILocalToggle: String { tr("settings.ai_local_toggle", "On-Device Apple Intelligence") }
+    static var settingsAILocalAvailable: String { tr("settings.ai_local_available", "Ready offline (Apple Intelligence)") }
+    static var settingsAILocalDeviceIneligible: String { tr("settings.ai_local_device_ineligible", "Disabled — Requires iPhone 15 Pro / 16 / 17 Pro Max or iPad M1+") }
+    static var settingsAILocalDisabledInSystem: String { tr("settings.ai_local_disabled_in_system", "Turn on Apple Intelligence in iOS Settings to enable") }
+    static var settingsAILocalDownloading: String { tr("settings.ai_local_downloading", "Apple Intelligence model is preparing on device...") }
+    static var settingsAILocalOlderOS: String { tr("settings.ai_local_older_os", "Requires iOS 26 or later with Apple Intelligence hardware") }
+    static var settingsAIAutoRefineToggle: String { tr("settings.ai_auto_refine_toggle", "Auto-summarize & polish after recording") }
+    static var settingsAIProviderPicker: String { tr("settings.ai_provider_picker", "Refinement Engine") }
+    static var aiProviderAutomatic: String { tr("ai.provider.automatic", "Automatic (Local first, then Cloud)") }
+    static var aiProviderAppleLocal: String { tr("ai.provider.apple_local", "Apple Intelligence (On-Device)") }
+    static var aiProviderCloud: String { tr("ai.provider.cloud", "Online AI (Groq / OpenAI)") }
+    static var settingsGroqPresetButton: String { tr("settings.groq_preset_button", "Configure Free Groq Preset (Whisper + Llama)") }
+    static var settingsGroqPresetApplied: String { tr("settings.groq_preset_applied", "Groq endpoints applied! Enter your free Groq API key below.") }
+    static var settingsAIChatHeader: String { tr("settings.ai_chat_header", "Online AI Text Refinement (Free Tier / Custom)") }
+    static var settingsAIChatFooter: String {
+        tr("settings.ai_chat_footer", "Optional for older iPhones or cloud summaries. Leave the key empty to reuse the same key from the Whisper section above (ideal for Groq).")
+    }
+    static var settingsAIChatEndpoint: String { tr("settings.ai_chat_endpoint", "Chat Endpoint URL") }
+    static var settingsAIChatModel: String { tr("settings.ai_chat_model", "Chat Model (e.g. llama-3.3-70b-versatile)") }
+    static var settingsAIChatAPIKey: String { tr("settings.ai_chat_apikey", "AI Chat API Key (Optional if reusing Whisper)") }
+
+    static var toolbarRefineAI: String { tr("toolbar.refine_ai", "AI Refine") }
+    static var aiRefineTitle: String { tr("ai.refine.title", "AI Post-Processing") }
+    static var aiSummarySectionTitle: String { tr("ai.summary.section_title", "AI Summary & Key Points") }
+    static var aiSummaryEmptyHint: String {
+        tr("ai.summary.empty_hint", "No AI summary yet. Tap \"AI Refine\" to polish punctuation or generate a structured summary.")
+    }
+    static var aiRefineDeviceCapabilities: String { tr("ai.refine.device_capabilities", "Device AI Capabilities") }
+    static var aiRefineActionReprocessTitle: String { tr("ai.refine.reprocess_title", "Re-analyze Audio + Laughs & Sighs") }
+    static func aiRefineActionReprocessSub(_ engineName: String) -> String {
+        fmt("ai.refine.reprocess_sub", "Re-transcribes saved audio using %@ and re-scans laughter, sighs, and pauses at current sensitivity.", engineName)
+    }
+    static var aiRefineActionFixTextTitle: String { tr("ai.refine.fix_text_title", "Polish Punctuation & Clarity") }
+    static func aiRefineActionFixTextSub(_ engineName: String) -> String {
+        fmt("ai.refine.fix_text_sub", "Refines spelling, capitalization, and context using %@ while keeping word timestamps synced.", engineName)
+    }
+    static var aiRefineActionSummaryTitle: String { tr("ai.refine.summary_title", "Generate Summary & Key Takeaways") }
+    static func aiRefineActionSummarySub(_ engineName: String) -> String {
+        fmt("ai.refine.summary_sub", "Creates concise bullet points and action items using %@.", engineName)
+    }
+    static var aiRefineActionFullTitle: String { tr("ai.refine.full_title", "Polish Text + Generate Summary") }
+    static var aiRefineNeedsCloudOrLocal: String {
+        tr("ai.refine.needs_cloud_or_local", "Local Apple Intelligence is not supported on this device. Add a free Groq API key in Settings to use cloud refinement.")
+    }
+    static var aiRefineOpenSettingsHint: String {
+        tr("ai.refine.open_settings_hint", "Configure an API key in Settings (or use a device with Apple Intelligence).")
+    }
+    static var aiRefineRunningReprocess: String { tr("ai.refine.running_reprocess", "Re-analyzing full audio & acoustic events...") }
+    static var aiRefineRunningFixText: String { tr("ai.refine.running_fix_text", "Polishing transcript with AI...") }
+    static var aiRefineRunningSummary: String { tr("ai.refine.running_summary", "Generating AI summary...") }
+    static var aiRefineCompleted: String { tr("ai.refine.completed", "Update completed!") }
+    static var aiEngineAppleIntelligence: String { tr("ai.engine.apple_intelligence", "Apple Intelligence (On-Device)") }
+    static func aiEngineCloudLabel(_ model: String) -> String {
+        fmt("ai.engine.cloud_label", "Cloud AI (%@)", model)
+    }
+    static func speechEngineSpeechAnalyzer(_ localeId: String) -> String {
+        fmt("speech.engine_speechanalyzer", "Apple SpeechAnalyzer On-Device (%@)", localeId)
+    }
+    static var exportSummarySectionTitle: String { tr("export.summary_section_title", "AI Summary & Key Takeaways") }
+    static var aiErrorNoTranscript: String { tr("ai.error.no_transcript", "This recording has no transcribed words yet. Re-analyze the audio first.") }
+    static var aiErrorMissingConfig: String { tr("ai.error.missing_config", "No local Apple Intelligence or Cloud AI key is configured. Add a free Groq API key in Settings.") }
+    static var aiErrorLocalHardware: String { tr("ai.error.local_hardware", "Apple Intelligence on-device is not supported on this hardware. Choose Automatic or Online AI in Settings.") }
+
     // MARK: - Helper de unión de palabras (soporte CJK/sin espacios)
 
     /// Une tokens de transcripción respetando idiomas sin espacios entre palabras (chino, japonés, tailandés)

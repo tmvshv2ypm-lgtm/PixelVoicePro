@@ -368,10 +368,118 @@ final class AppViewModel: ObservableObject {
             recording.sha256Hash = result.sha256
             recording.fileSizeBytes = result.fileSize
             recording.transcriptionEngineUsed = result.engine
+
+            let config = TranscriptionConfiguration.load()
+            if config.enableAIRefinementOnFinish,
+               !result.segments.isEmpty,
+               AdaptiveAICapability.canRunAIRefinement(config: config) {
+                await MainActor.run { [weak self] in
+                    self?.backgroundProcessingProgress = 0.98
+                    self?.backgroundProcessingStatus = L10n.aiRefineRunningSummary
+                }
+                let locale = SpeechTranscriptionService.resolveRecognitionLocale(for: config.localeIdentifier)
+                if let outcome = try? await IntelligentRefinementService().refineRecording(
+                    segments: result.segments,
+                    locale: locale,
+                    config: config,
+                    mode: .fixTranscriptAndSummarize
+                ) {
+                    if let refinedSegs = outcome.refinedSegments {
+                        recording.segments = refinedSegs
+                    }
+                    if let summary = outcome.summaryText {
+                        recording.aiSummaryText = summary
+                    }
+                    recording.aiRefinementEngine = outcome.engineUsed
+                }
+            }
+
             recording.isProcessingBackground = false
             recording.recalculateSpeakerStatistics()
             saveChanges()
         }
+    }
+
+    // MARK: - Post-Procesamiento Manual bajo Demanda (Re-análisis de Audio e IA)
+
+    @MainActor
+    func reprocessRecordingAudio(_ recording: VoiceRecording) async throws -> String {
+        let fileURL = RecordingStorageService.audioFileURL(for: recording.audioFileName)
+        let previousSpeakersByID = Dictionary(uniqueKeysWithValues: recording.speakers.map { ($0.id, $0) })
+        let totalDuration = max(0.5, recording.duration)
+
+        let processed = await Task.detached(priority: .userInitiated) {
+            let diarizer = SpeakerDiarizationService()
+            diarizer.analyzeAudioFileOfflineIfNeeded(url: fileURL)
+
+            let analyzer = AcousticEventAnalyzer()
+            await analyzer.reanalyzeCompleteAudioFile(at: fileURL)
+
+            let events = analyzer.detectedEvents
+            let silences = analyzer.silenceIntervals
+            let detectedSpeakers = diarizer.detectedSpeakers
+
+            let transcriber = SpeechTranscriptionService()
+            let speechResult = await transcriber.postProcessRecording(
+                audioFileURL: fileURL,
+                totalDuration: totalDuration,
+                existingWords: [],
+                diarizer: diarizer,
+                acousticEvents: events,
+                forceFullAnalysis: true
+            )
+
+            return (
+                segments: speechResult.segments,
+                engine: speechResult.engineDescription,
+                speakers: detectedSpeakers,
+                events: events,
+                silences: silences
+            )
+        }.value
+
+        // Conservar nombres personalizados y colores asignados manualmente por el usuario si coinciden los locutores
+        let mergedSpeakers = processed.speakers.map { spk -> SpeakerProfile in
+            if let old = previousSpeakersByID[spk.id] {
+                var copy = spk
+                copy.customName = old.customName
+                copy.colorHex = old.colorHex
+                return copy
+            }
+            return spk
+        }
+
+        recording.speakers = mergedSpeakers.isEmpty ? recording.speakers : mergedSpeakers
+        recording.segments = processed.segments
+        recording.acousticEvents = processed.events
+        recording.silenceIntervals = processed.silences
+        recording.transcriptionEngineUsed = processed.engine
+        recording.recalculateSpeakerStatistics()
+        saveChanges()
+        return processed.engine
+    }
+
+    @MainActor
+    func refineRecordingWithAI(_ recording: VoiceRecording, mode: AIRefinementMode) async throws -> String {
+        let config = TranscriptionConfiguration.load()
+        let locale = SpeechTranscriptionService.resolveRecognitionLocale(for: config.localeIdentifier)
+        let outcome = try await IntelligentRefinementService().refineRecording(
+            segments: recording.segments,
+            locale: locale,
+            config: config,
+            mode: mode
+        )
+
+        if let refinedSegs = outcome.refinedSegments {
+            recording.segments = refinedSegs
+        }
+        if let summary = outcome.summaryText {
+            recording.aiSummaryText = summary
+        }
+        recording.aiRefinementEngine = outcome.engineUsed
+        recording.recalculateSpeakerStatistics()
+        saveChanges()
+        return outcome.engineUsed
     }
 
     // MARK: - Filtrado y Agrupación Cronológica Precisa al Segundo

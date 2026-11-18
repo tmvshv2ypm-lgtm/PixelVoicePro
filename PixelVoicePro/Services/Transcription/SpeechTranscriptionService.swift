@@ -1,20 +1,103 @@
 import Foundation
 import Speech
 import AVFoundation
+import CoreMedia
 
-/// Configuración del motor híbrido de transcripción (Apple Speech en vivo + Post-procesamiento por fragmentos de 45s + Whisper API).
+/// Configuración del motor híbrido de transcripción (Apple Speech / SpeechAnalyzer iOS 26+ + Post-procesamiento + Whisper / IA Adaptativa).
 struct TranscriptionConfiguration: Codable {
+    enum AcousticSensitivityLevel: String, Codable, CaseIterable, Identifiable {
+        case conservative = "conservative"
+        case balanced = "balanced"
+        case high = "high"
+
+        var id: String { rawValue }
+
+        var localizedTitle: String {
+            switch self {
+            case .conservative: return L10n.acousticSensitivityConservative
+            case .balanced:     return L10n.acousticSensitivityBalanced
+            case .high:         return L10n.acousticSensitivityHigh
+            }
+        }
+    }
+
+    enum AIRefinementProviderPreference: String, Codable, CaseIterable, Identifiable {
+        case automatic = "automatic"
+        case appleIntelligenceLocal = "apple_local"
+        case cloudOpenAICompatible = "cloud"
+
+        var id: String { rawValue }
+
+        var localizedTitle: String {
+            switch self {
+            case .automatic:               return L10n.aiProviderAutomatic
+            case .appleIntelligenceLocal:  return L10n.aiProviderAppleLocal
+            case .cloudOpenAICompatible:   return L10n.aiProviderCloud
+            }
+        }
+    }
+
     static let automaticLocaleIdentifier = "auto"
 
     var localeIdentifier: String = TranscriptionConfiguration.automaticLocaleIdentifier
     var preferOnDeviceRecognition: Bool = true
+    var useModernSpeechAnalyzer: Bool = true
+    var acousticSensitivity: AcousticSensitivityLevel = .balanced
+
     var enableWhisperPostProcessing: Bool = false
     var whisperEndpointURL: String = "https://api.openai.com/v1/audio/transcriptions"
     var whisperAPIKey: String = ""
     var whisperModelName: String = "whisper-1"
 
+    var enableAIRefinementOnFinish: Bool = false
+    var aiRefinementProvider: AIRefinementProviderPreference = .automatic
+    var aiChatEndpointURL: String = "https://api.groq.com/openai/v1/chat/completions"
+    var aiChatModelName: String = "llama-3.3-70b-versatile"
+    var aiChatAPIKey: String = ""
+
     static let storageKey = "com.pixelvoicepro.transcription.config"
     private static let autoLocaleMigrationKey = "com.pixelvoicepro.transcription.migratedAutoLocale.v1"
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        localeIdentifier = try c.decodeIfPresent(String.self, forKey: .localeIdentifier) ?? Self.automaticLocaleIdentifier
+        preferOnDeviceRecognition = try c.decodeIfPresent(Bool.self, forKey: .preferOnDeviceRecognition) ?? true
+        useModernSpeechAnalyzer = try c.decodeIfPresent(Bool.self, forKey: .useModernSpeechAnalyzer) ?? true
+        acousticSensitivity = try c.decodeIfPresent(AcousticSensitivityLevel.self, forKey: .acousticSensitivity) ?? .balanced
+        enableWhisperPostProcessing = try c.decodeIfPresent(Bool.self, forKey: .enableWhisperPostProcessing) ?? false
+        whisperEndpointURL = try c.decodeIfPresent(String.self, forKey: .whisperEndpointURL) ?? "https://api.openai.com/v1/audio/transcriptions"
+        whisperAPIKey = try c.decodeIfPresent(String.self, forKey: .whisperAPIKey) ?? ""
+        whisperModelName = try c.decodeIfPresent(String.self, forKey: .whisperModelName) ?? "whisper-1"
+        enableAIRefinementOnFinish = try c.decodeIfPresent(Bool.self, forKey: .enableAIRefinementOnFinish) ?? false
+        aiRefinementProvider = try c.decodeIfPresent(AIRefinementProviderPreference.self, forKey: .aiRefinementProvider) ?? .automatic
+        aiChatEndpointURL = try c.decodeIfPresent(String.self, forKey: .aiChatEndpointURL) ?? "https://api.groq.com/openai/v1/chat/completions"
+        aiChatModelName = try c.decodeIfPresent(String.self, forKey: .aiChatModelName) ?? "llama-3.3-70b-versatile"
+        aiChatAPIKey = try c.decodeIfPresent(String.self, forKey: .aiChatAPIKey) ?? ""
+    }
+
+    var resolvedWhisperAPIKey: String {
+        let direct = whisperAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !direct.isEmpty { return direct }
+        return aiChatAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var resolvedAIChatAPIKey: String {
+        let direct = aiChatAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !direct.isEmpty { return direct }
+        return whisperAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    mutating func applyGroqFreePreset() {
+        whisperEndpointURL = "https://api.groq.com/openai/v1/audio/transcriptions"
+        whisperModelName = "whisper-large-v3-turbo"
+        aiChatEndpointURL = "https://api.groq.com/openai/v1/chat/completions"
+        aiChatModelName = "llama-3.3-70b-versatile"
+        if aiRefinementProvider == .appleIntelligenceLocal && !AdaptiveAICapability.isAppleIntelligenceAvailable {
+            aiRefinementProvider = .automatic
+        }
+    }
 
     static func load() -> TranscriptionConfiguration {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
@@ -327,6 +410,7 @@ final class SpeechTranscriptionService {
         existingWords: [WordTimestamp],
         diarizer: SpeakerDiarizationService,
         acousticEvents: [AcousticEvent],
+        forceFullAnalysis: Bool = false,
         onProgress: (@MainActor (Double, String) -> Void)? = nil
     ) async -> (segments: [TranscriptSegment], engineDescription: String) {
         configuration = .load()
@@ -340,17 +424,29 @@ final class SpeechTranscriptionService {
             onDevice: configuration.preferOnDeviceRecognition && supportsOnDevice
         )
 
-        // Determinar cuánto de la grabación ya fue cubierto en vivo vs cuánto falta transcribir del archivo completo
         let lastCoveredSecond = existingWords.last?.endTime ?? 0.0
-        let needsFullFileChunkAnalysis = existingWords.isEmpty || (totalDuration - lastCoveredSecond > 4.0)
+        let needsClassicChunkAnalysis = forceFullAnalysis || existingWords.isEmpty || (totalDuration - lastCoveredSecond > 4.0)
+        let whisperReady = configuration.enableWhisperPostProcessing
+            && (!configuration.resolvedWhisperAPIKey.isEmpty || AdaptiveAICapability.isLocalServerURL(configuration.whisperEndpointURL))
 
-        if configuration.enableWhisperPostProcessing,
-           !configuration.whisperAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        if whisperReady,
            let whisperWords = try? await transcribeWithWhisperEndpoint(audioFileURL: audioFileURL, diarizer: diarizer),
            !whisperWords.isEmpty {
             finalWords = whisperWords
-            engineLabel = "Whisper AI (\(configuration.whisperModelName)) + PixelVoice DSP Diarizer"
-        } else if needsFullFileChunkAnalysis {
+            engineLabel = "Whisper AI (\(configuration.whisperModelName)) + PixelVoice DSP"
+        } else if configuration.useModernSpeechAnalyzer,
+                  #available(iOS 26.0, *),
+                  SpeechTranscriber.isAvailable,
+                  let modernWords = await transcribeAudioFileWithSpeechAnalyzer(
+                    url: audioFileURL,
+                    diarizer: diarizer,
+                    onProgress: onProgress
+                  ),
+                  !modernWords.isEmpty {
+            finalWords = modernWords
+            let resolvedId = activeLocale.identifier.replacingOccurrences(of: "_", with: "-")
+            engineLabel = L10n.speechEngineSpeechAnalyzer(resolvedId)
+        } else if needsClassicChunkAnalysis {
             await onProgress?(0.20, L10n.speechSplitting45s)
             let chunkedWords = await transcribeAudioFileIn45sChunks(
                 url: audioFileURL,
@@ -371,6 +467,118 @@ final class SpeechTranscriptionService {
         )
         await onProgress?(1.0, L10n.speechCompleted)
         return (segments, engineLabel)
+    }
+
+    @available(iOS 26.0, *)
+    private func transcribeAudioFileWithSpeechAnalyzer(
+        url: URL,
+        diarizer: SpeakerDiarizationService,
+        onProgress: (@MainActor (Double, String) -> Void)?
+    ) async -> [WordTimestamp]? {
+        guard SpeechTranscriber.isAvailable else { return nil }
+        guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: activeLocale) else {
+            return nil
+        }
+
+        let transcriber = SpeechTranscriber(
+            locale: supportedLocale,
+            transcriptionOptions: [],
+            reportingOptions: [],
+            attributeOptions: [.audioTimeRange]
+        )
+
+        do {
+            await onProgress?(0.28, L10n.aiRefineRunningReprocess)
+            if let installationRequest = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                try await installationRequest.downloadAndInstall()
+            }
+
+            let analyzer = SpeechAnalyzer(modules: [transcriber])
+            let resultsTask = Task { () -> [WordTimestamp] in
+                var collected: [WordTimestamp] = []
+                do {
+                    for try await result in transcriber.results {
+                        guard result.isFinal else { continue }
+                        Self.appendTimedWords(
+                            from: result.text,
+                            fallbackRange: result.range,
+                            diarizer: diarizer,
+                            into: &collected
+                        )
+                    }
+                } catch {
+                    return collected
+                }
+                return collected
+            }
+
+            await onProgress?(0.55, L10n.speechAligning)
+            let audioFile = try AVAudioFile(forReading: url)
+            do {
+                _ = try await analyzer.analyzeSequence(from: audioFile)
+                try await analyzer.finalizeAndFinishThroughEndOfInput()
+            } catch {
+                await analyzer.cancelAndFinishNow()
+                resultsTask.cancel()
+                return nil
+            }
+
+            let output = await resultsTask.value
+            return output.isEmpty ? nil : output
+        } catch {
+            return nil
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private static func appendTimedWords(
+        from attributed: AttributedString,
+        fallbackRange: CMTimeRange,
+        diarizer: SpeakerDiarizationService,
+        into words: inout [WordTimestamp]
+    ) {
+        let fbStart = (fallbackRange.isValid && !fallbackRange.isIndefinite) ? CMTimeGetSeconds(fallbackRange.start) : 0.0
+        let fbDur = (fallbackRange.isValid && !fallbackRange.isIndefinite) ? CMTimeGetSeconds(fallbackRange.duration) : 0.3
+        let safeFbStart = fbStart.isFinite ? max(0.0, fbStart) : 0.0
+        let safeFbEnd = max(safeFbStart + 0.15, (fbDur.isFinite ? safeFbStart + fbDur : safeFbStart + 0.3))
+
+        for run in attributed.runs {
+            let rawPiece = String(attributed[run.range].characters)
+            let tokens = rawPiece
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }
+            guard !tokens.isEmpty else { continue }
+
+            // Adjuntar signos de puntuación sueltos al token anterior en vez de crear píldoras vacías
+            if tokens.count == 1,
+               tokens[0].allSatisfy({ $0.isPunctuation }),
+               !words.isEmpty {
+                words[words.count - 1].word += tokens[0]
+                continue
+            }
+
+            let cmRange = run.audioTimeRange ?? fallbackRange
+            let rStartRaw = (cmRange.isValid && !cmRange.isIndefinite) ? CMTimeGetSeconds(cmRange.start) : safeFbStart
+            let rDurRaw = (cmRange.isValid && !cmRange.isIndefinite) ? CMTimeGetSeconds(cmRange.duration) : (safeFbEnd - safeFbStart)
+            let runStart = rStartRaw.isFinite ? max(0.0, rStartRaw) : safeFbStart
+            let runDur = (rDurRaw.isFinite && rDurRaw > 0.05) ? rDurRaw : 0.25
+            let runEnd = runStart + runDur
+
+            let step = (runEnd - runStart) / Double(tokens.count)
+            for (idx, token) in tokens.enumerated() {
+                let s = runStart + (Double(idx) * step)
+                let e = max(s + 0.12, runStart + (Double(idx + 1) * step))
+                words.append(
+                    WordTimestamp(
+                        word: token,
+                        startTime: s,
+                        endTime: e,
+                        confidence: 0.96,
+                        speakerId: diarizer.speakerId(at: s)
+                    )
+                )
+            }
+        }
     }
 
     /// Divide un archivo de audio de cualquier duración (ej. 2 minutos o 3 horas de clase) en fragmentos seguros de 45 segundos
@@ -573,7 +781,10 @@ final class SpeechTranscriptionService {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = 45
-        request.setValue("Bearer \(configuration.whisperAPIKey)", forHTTPHeaderField: "Authorization")
+        let whisperKey = configuration.resolvedWhisperAPIKey
+        if !whisperKey.isEmpty {
+            request.setValue("Bearer \(whisperKey)", forHTTPHeaderField: "Authorization")
+        }
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var body = Data()

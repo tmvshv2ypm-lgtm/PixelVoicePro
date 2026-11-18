@@ -32,6 +32,8 @@ final class VoiceRecording {
     var isFavorite: Bool
     var isProcessingBackground: Bool = false
     var transcriptionEngineUsed: String
+    var aiSummaryText: String = ""
+    var aiRefinementEngine: String = ""
 
     /// Texto completo plano indexable para búsquedas globales ultrarrápidas
     var fullTranscriptText: String
@@ -77,6 +79,8 @@ final class VoiceRecording {
         isFavorite: Bool = false,
         isProcessingBackground: Bool = false,
         transcriptionEngineUsed: String = "Apple Speech On-Device + PixelVoice DSP Diarizer",
+        aiSummaryText: String = "",
+        aiRefinementEngine: String = "",
         tags: [TagItem] = [],
         speakers: [SpeakerProfile] = [],
         segments: [TranscriptSegment] = [],
@@ -104,6 +108,8 @@ final class VoiceRecording {
         self.isFavorite = isFavorite
         self.isProcessingBackground = isProcessingBackground
         self.transcriptionEngineUsed = transcriptionEngineUsed
+        self.aiSummaryText = aiSummaryText
+        self.aiRefinementEngine = aiRefinementEngine
 
         let encoder = JSONEncoder()
         self.tagsData = (try? encoder.encode(tags)) ?? Data()

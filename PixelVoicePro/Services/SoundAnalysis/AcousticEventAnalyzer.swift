@@ -30,10 +30,50 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
     private var silenceStartTime: TimeInterval?
     private var lastEventByType: [AcousticEventType: TimeInterval] = [:]
 
-    /// Umbral en segundos para considerar un silencio como `[⏸️ Pausa larga]` en la transcripción
-    private let longPauseThresholdSeconds: TimeInterval = 2.5
-    /// Umbral en segundos para registrar un `SilenceInterval` omitible por el reproductor "Saltar silencios"
-    private let skippableSilenceThresholdSeconds: TimeInterval = 0.45
+    /// Sensibilidad configurable para detección de risas, suspiros, tos y pausas largas
+    var sensitivity: TranscriptionConfiguration.AcousticSensitivityLevel = TranscriptionConfiguration.load().acousticSensitivity
+
+    private var longPauseThresholdSeconds: TimeInterval {
+        switch sensitivity {
+        case .conservative: return 2.5
+        case .balanced: return 2.0
+        case .high: return 1.6
+        }
+    }
+
+    private var skippableSilenceThresholdSeconds: TimeInterval {
+        switch sensitivity {
+        case .conservative: return 0.50
+        case .balanced: return 0.42
+        case .high: return 0.35
+        }
+    }
+
+    private func confidenceThreshold(for eventType: AcousticEventType) -> Double {
+        switch (sensitivity, eventType) {
+        case (.conservative, .sigh), (.conservative, .cough): return 0.54
+        case (.conservative, .laughter): return 0.58
+        case (.conservative, _): return 0.62
+
+        case (.balanced, .sigh), (.balanced, .cough): return 0.38
+        case (.balanced, .laughter): return 0.44
+        case (.balanced, _): return 0.54
+
+        case (.high, .sigh), (.high, .cough): return 0.28
+        case (.high, .laughter): return 0.34
+        case (.high, _): return 0.45
+        }
+    }
+
+    private func cooldownSeconds(for eventType: AcousticEventType) -> TimeInterval {
+        switch (sensitivity, eventType) {
+        case (.conservative, _): return 6.0
+        case (.balanced, .laughter), (.balanced, .sigh), (.balanced, .cough): return 3.5
+        case (.balanced, _): return 5.0
+        case (.high, .laughter), (.high, .sigh), (.high, .cough): return 2.5
+        case (.high, _): return 4.0
+        }
+    }
 
     /// Callback disparado en el hilo principal cada vez que se detecta un nuevo evento acústico no verbal
     var onAcousticEventDetected: ((AcousticEvent) -> Void)?
@@ -41,6 +81,7 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
     var onLiveStatusChanged: ((String, AcousticEventType?) -> Void)?
 
     func reset() {
+        sensitivity = TranscriptionConfiguration.load().acousticSensitivity
         stateLock.lock()
         _detectedEvents.removeAll()
         _silenceIntervals.removeAll()
@@ -52,13 +93,21 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
 
     /// Configura el `SNAudioStreamAnalyzer` con el formato del bus de entrada de `AVAudioEngine`.
     func startLiveStreamAnalysis(format: AVAudioFormat) {
+        sensitivity = TranscriptionConfiguration.load().acousticSensitivity
+        let winSeconds: Double
+        let overlap: Double
+        switch sensitivity {
+        case .conservative: winSeconds = 1.2; overlap = 0.50
+        case .balanced:     winSeconds = 0.95; overlap = 0.60
+        case .high:         winSeconds = 0.85; overlap = 0.65
+        }
         analysisQueue.sync {
             let analyzer = SNAudioStreamAnalyzer(format: format)
             self.streamAnalyzer = analyzer
             do {
                 let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
-                request.windowDuration = CMTimeMakeWithSeconds(1.2, preferredTimescale: 48000)
-                request.overlapFactor = 0.5
+                request.windowDuration = CMTimeMakeWithSeconds(winSeconds, preferredTimescale: 48000)
+                request.overlapFactor = overlap
                 try analyzer.add(request, withObserver: self)
             } catch {
                 // El detector DSP de pausas sigue activo
@@ -117,7 +166,7 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
                 let elapsedSilence = timestamp - start
                 if elapsedSilence >= longPauseThresholdSeconds {
                     let lastPauseTime = lastEventByType[.longPause] ?? -100.0
-                    if timestamp - lastPauseTime >= 6.0 {
+                    if timestamp - lastPauseTime >= cooldownSeconds(for: .longPause) {
                         pauseEventToEmit = AcousticEvent(
                             type: .longPause,
                             timestamp: start,
@@ -145,6 +194,15 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
 
     /// Analiza el archivo de audio completo al finalizar la grabación (`SNAudioFileAnalyzer`) cuando el usuario grabó en modo ahorro de batería.
     func analyzeCompleteAudioFileIfNeeded(at fileURL: URL) async {
+        sensitivity = TranscriptionConfiguration.load().acousticSensitivity
+        let winSeconds: Double
+        let overlap: Double
+        switch sensitivity {
+        case .conservative: winSeconds = 1.5; overlap = 0.35
+        case .balanced:     winSeconds = 1.0; overlap = 0.50
+        case .high:         winSeconds = 0.9; overlap = 0.60
+        }
+
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             analysisQueue.async { [weak self] in
                 guard let self = self else {
@@ -154,8 +212,8 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
                 do {
                     let fileAnalyzer = try SNAudioFileAnalyzer(url: fileURL)
                     let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
-                    request.windowDuration = CMTimeMakeWithSeconds(1.5, preferredTimescale: 48000)
-                    request.overlapFactor = 0.35
+                    request.windowDuration = CMTimeMakeWithSeconds(winSeconds, preferredTimescale: 48000)
+                    request.overlapFactor = overlap
                     try fileAnalyzer.add(request, withObserver: self)
                     fileAnalyzer.analyze()
                 } catch {
@@ -166,11 +224,53 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
         }
     }
 
+    /// Re-analiza por completo un archivo de audio existente (SoundAnalysis + pausas RMS DSP) con la sensibilidad actual.
+    func reanalyzeCompleteAudioFile(at fileURL: URL) async {
+        reset()
+        // 1. Re-escanear intervalos de silencio y pausas largas mediante RMS
+        if let audioFile = try? AVAudioFile(forReading: fileURL) {
+            let format = audioFile.processingFormat
+            let sampleRate = format.sampleRate
+            if sampleRate > 0 {
+                let chunkSize: AVAudioFrameCount = AVAudioFrameCount(max(1024, Int(sampleRate * 0.1)))
+                if let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkSize) {
+                    var frameOffset: AVAudioFramePosition = 0
+                    while true {
+                        do {
+                            try audioFile.read(into: buffer, frameCount: chunkSize)
+                            if buffer.frameLength == 0 { break }
+                            let timestamp = Double(frameOffset) / sampleRate
+                            if let floatData = buffer.floatChannelData?[0] {
+                                var rms: Float = 0.0
+                                vDSP_rmsqv(floatData, 1, &rms, vDSP_Length(buffer.frameLength))
+                                analyzeRMS(rms, at: timestamp)
+                            }
+                            frameOffset += AVAudioFramePosition(buffer.frameLength)
+                        } catch {
+                            break
+                        }
+                    }
+                    let finalDuration = Double(audioFile.length) / sampleRate
+                    stateLock.lock()
+                    let openStart = silenceStartTime
+                    silenceStartTime = nil
+                    stateLock.unlock()
+                    if let openStart {
+                        finalizeSilenceInterval(from: openStart, to: finalDuration)
+                    }
+                }
+            }
+        }
+        // 2. Re-escanear risas, suspiros, aplausos, tos y música con SoundAnalysis
+        await analyzeCompleteAudioFileIfNeeded(at: fileURL)
+    }
+
     /// Permite registrar un evento acústico directamente o desde post-procesamiento.
     func recordDetectedEvent(_ event: AcousticEvent) {
+        let minCooldown = cooldownSeconds(for: event.type)
         stateLock.lock()
         let lastTime = lastEventByType[event.type] ?? -100.0
-        guard (event.timestamp - lastTime) >= 6.0 else {
+        guard (event.timestamp - lastTime) >= minCooldown else {
             stateLock.unlock()
             return
         }
@@ -205,7 +305,7 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
         _silenceIntervals.append(interval)
         if duration >= longPauseThresholdSeconds {
             let lastPauseTime = lastEventByType[.longPause] ?? -100.0
-            if start - lastPauseTime >= 6.0 {
+            if start - lastPauseTime >= cooldownSeconds(for: .longPause) {
                 longPauseEvent = AcousticEvent(
                     type: .longPause,
                     timestamp: start,
@@ -228,9 +328,9 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
         let timestampSeconds = CMTimeGetSeconds(classificationResult.timeRange.start)
         let durationSeconds = max(0.8, CMTimeGetSeconds(classificationResult.timeRange.duration))
 
-        for classification in classificationResult.classifications.prefix(3) {
-            guard classification.confidence >= 0.62 else { continue }
+        for classification in classificationResult.classifications.prefix(6) {
             if let mappedType = mapAppleSoundIdentifier(classification.identifier) {
+                guard classification.confidence >= confidenceThreshold(for: mappedType) else { continue }
                 let event = AcousticEvent(
                     type: mappedType,
                     timestamp: max(0, timestampSeconds),
@@ -254,6 +354,8 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
            normalized.contains("giggle") ||
            normalized.contains("snicker") ||
            normalized.contains("chuckle") ||
+           normalized.contains("chortle") ||
+           normalized.contains("titter") ||
            normalized.contains("belly_laugh") ||
            normalized.contains("cackle") {
             return .laughter

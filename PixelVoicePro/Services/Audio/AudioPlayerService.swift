@@ -2,11 +2,11 @@ import Foundation
 import AVFoundation
 import Combine
 
-/// Motor de Reproducción Interactiva Pro (`AVAudioEngine` + `AVAudioUnitTimePitch` + `AVAudioUnitEQ`)
-/// con sincronización Karaoke a 60 Hz, salida al altavoz principal, velocidad variable sin cambio de tono (0.5x - 2.0x),
-/// "Saltar Silencios" automático y "Aislamiento de Voz" DSP en tiempo real estilo Apple.
+/// Motor de Reproducción Interactiva Pro (`AVAudioEngine` + `AVAudioUnitTimePitch` + `AVAudioUnitEQ` con respaldo automático `AVAudioPlayer`)
+/// con sincronización Karaoke a 60 Hz, repetición continua, velocidad variable sin cambio de tono (0.5x - 2.0x),
+/// "Saltar Silencios" automático y "Aislamiento de Voz" DSP en tiempo real.
 @MainActor
-final class AudioPlayerService: ObservableObject {
+final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var currentTime: TimeInterval = 0.0
     @Published private(set) var duration: TimeInterval = 0.0
@@ -21,6 +21,7 @@ final class AudioPlayerService: ObservableObject {
             applyVoiceIsolationSettings()
         }
     }
+    @Published var repeatEnabled: Bool = false
     @Published private(set) var totalSilenceSavedSeconds: TimeInterval = 0.0
     @Published private(set) var isCurrentlySkippingSilence: Bool = false
 
@@ -32,22 +33,46 @@ final class AudioPlayerService: ObservableObject {
 
     private var audioEngine = AVAudioEngine()
     private var playerNode = AVAudioPlayerNode()
+    private var inputMixerNode = AVAudioMixerNode()
     private var timePitchNode = AVAudioUnitTimePitch()
     private var voiceIsolationEQ = AVAudioUnitEQ(numberOfBands: 5)
     private var isEngineGraphConfigured: Bool = false
+    private var engineConfigCancellable: AnyCancellable?
+
+    /// Respaldo transparente en caso de que el grafo hardware de AVAudioEngine falle ante un cambio de ruta inesperado
+    private var fallbackAudioPlayer: AVAudioPlayer?
 
     private var audioFile: AVAudioFile?
     private var fileSampleRate: Double = 44100.0
     private var totalFrames: AVAudioFramePosition = 0
     private var seekStartFrame: AVAudioFramePosition = 0
+    private var seekStartTime: TimeInterval = 0.0
     private var playbackGeneration: Int = 0
 
     private var syncTimer: Timer?
     private var currentRecording: VoiceRecording?
     private var currentAudioURL: URL?
 
-    init() {
+    override init() {
+        super.init()
         configureVoiceIsolationEQProfile()
+        observeEngineConfigurationChanges()
+    }
+
+    private func observeEngineConfigurationChanges() {
+        engineConfigCancellable = NotificationCenter.default
+            .publisher(for: .AVAudioEngineConfigurationChange, object: audioEngine)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    self.isEngineGraphConfigured = false
+                    if self.isPlaying, self.fallbackAudioPlayer == nil {
+                        let resumePos = self.currentTime
+                        self.scheduleAndStartPlayback(from: resumePos)
+                    }
+                }
+            }
     }
 
     /// Configura las 5 bandas DSP del filtro "Aislamiento de Voz":
@@ -94,25 +119,36 @@ final class AudioPlayerService: ObservableObject {
         voiceIsolationEQ.globalGain = voiceIsolationEnabled ? 2.0 : 0.0
     }
 
-    private func rebuildAudioEngineGraph(format: AVAudioFormat) {
+    private func rebuildAudioEngineGraph(fileFormat: AVAudioFormat) {
         playbackGeneration &+= 1
         playerNode.stop()
-        audioEngine.stop()
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
         audioEngine.reset()
 
         playerNode = AVAudioPlayerNode()
+        inputMixerNode = AVAudioMixerNode()
         timePitchNode = AVAudioUnitTimePitch()
         timePitchNode.rate = playbackSpeed.rawValue
         voiceIsolationEQ = AVAudioUnitEQ(numberOfBands: 5)
         configureVoiceIsolationEQProfile()
 
+        // Formato estéreo unificado para evitar desajustes mono -> estéreo en AVAudioUnitTimePitch / AVAudioUnitEQ
+        let hwRate = audioEngine.outputNode.outputFormat(forBus: 0).sampleRate
+        let mixerRate = audioEngine.mainMixerNode.outputFormat(forBus: 0).sampleRate
+        let targetRate = hwRate > 0 ? hwRate : (mixerRate > 0 ? mixerRate : max(44100.0, fileFormat.sampleRate))
+        let stereoGraphFormat = AVAudioFormat(standardFormatWithSampleRate: targetRate, channels: 2) ?? fileFormat
+
         audioEngine.attach(playerNode)
+        audioEngine.attach(inputMixerNode)
         audioEngine.attach(timePitchNode)
         audioEngine.attach(voiceIsolationEQ)
 
-        audioEngine.connect(playerNode, to: timePitchNode, format: format)
-        audioEngine.connect(timePitchNode, to: voiceIsolationEQ, format: format)
-        audioEngine.connect(voiceIsolationEQ, to: audioEngine.mainMixerNode, format: nil)
+        audioEngine.connect(playerNode, to: inputMixerNode, format: fileFormat)
+        audioEngine.connect(inputMixerNode, to: timePitchNode, format: stereoGraphFormat)
+        audioEngine.connect(timePitchNode, to: voiceIsolationEQ, format: stereoGraphFormat)
+        audioEngine.connect(voiceIsolationEQ, to: audioEngine.mainMixerNode, format: stereoGraphFormat)
 
         audioEngine.prepare()
         isEngineGraphConfigured = true
@@ -126,6 +162,7 @@ final class AudioPlayerService: ObservableObject {
         self.currentTime = 0.0
         self.totalSilenceSavedSeconds = 0.0
         self.seekStartFrame = 0
+        self.seekStartTime = 0.0
 
         let resolvedURL = RecordingStorageService.ensurePlayableAudioFileExists(
             for: recording,
@@ -145,7 +182,7 @@ final class AudioPlayerService: ObservableObject {
                 if file.length > 0, fmt.sampleRate > 0 {
                     self.duration = max(0.1, Double(file.length) / fmt.sampleRate)
                 }
-                rebuildAudioEngineGraph(format: fmt)
+                rebuildAudioEngineGraph(fileFormat: fmt)
             } catch {
                 self.audioFile = nil
                 self.totalFrames = 0
@@ -174,6 +211,7 @@ final class AudioPlayerService: ObservableObject {
         if audioFile == nil, let recording = currentRecording {
             let fallbackURL = currentAudioURL ?? RecordingStorageService.audioFileURL(for: recording.audioFileName)
             let validURL = RecordingStorageService.ensurePlayableAudioFileExists(for: recording, expectedURL: fallbackURL)
+            self.currentAudioURL = validURL
             if let loaded = try? AVAudioFile(forReading: validURL) {
                 self.audioFile = loaded
                 self.fileSampleRate = max(8000.0, loaded.processingFormat.sampleRate)
@@ -181,13 +219,15 @@ final class AudioPlayerService: ObservableObject {
                 if loaded.length > 0 {
                     self.duration = max(0.1, Double(loaded.length) / self.fileSampleRate)
                 }
-                rebuildAudioEngineGraph(format: loaded.processingFormat)
+                rebuildAudioEngineGraph(fileFormat: loaded.processingFormat)
             }
         }
 
-        scheduleAndStartPlayback(from: currentTime)
         isPlaying = true
-        start60HzSyncTimer()
+        scheduleAndStartPlayback(from: currentTime)
+        if isPlaying {
+            start60HzSyncTimer()
+        }
     }
 
     func pause() {
@@ -196,6 +236,7 @@ final class AudioPlayerService: ObservableObject {
         }
         playbackGeneration &+= 1
         playerNode.stop()
+        fallbackAudioPlayer?.pause()
         isPlaying = false
         syncTimer?.invalidate()
         syncTimer = nil
@@ -207,11 +248,13 @@ final class AudioPlayerService: ObservableObject {
         if audioEngine.isRunning {
             audioEngine.stop()
         }
+        stopFallbackPlayer()
         isPlaying = false
         syncTimer?.invalidate()
         syncTimer = nil
         currentTime = 0.0
         seekStartFrame = 0
+        seekStartTime = 0.0
         activeSegmentId = nil
         activeWordId = nil
         activeAcousticEventId = nil
@@ -221,6 +264,7 @@ final class AudioPlayerService: ObservableObject {
     func seek(to targetTime: TimeInterval, autoPlay: Bool = true) {
         let clamped = max(0.0, min(duration, targetTime))
         currentTime = clamped
+        seekStartTime = clamped
         updateKaraokeSynchronization(at: clamped)
 
         if autoPlay {
@@ -231,6 +275,8 @@ final class AudioPlayerService: ObservableObject {
             }
         } else if isPlaying {
             scheduleAndStartPlayback(from: clamped)
+        } else {
+            fallbackAudioPlayer?.currentTime = clamped
         }
     }
 
@@ -242,25 +288,46 @@ final class AudioPlayerService: ObservableObject {
 
     private func applyPlaybackRate() {
         timePitchNode.rate = playbackSpeed.rawValue
+        fallbackAudioPlayer?.rate = playbackSpeed.rawValue
     }
 
     private func scheduleAndStartPlayback(from time: TimeInterval) {
-        guard let file = audioFile, totalFrames > 0 else { return }
+        let clamped = max(0.0, min(duration, time))
+        seekStartTime = clamped
+
+        guard let file = audioFile, totalFrames > 0 else {
+            activateFallbackAVAudioPlayer(from: clamped)
+            return
+        }
+
+        stopFallbackPlayer()
 
         if !isEngineGraphConfigured {
-            rebuildAudioEngineGraph(format: file.processingFormat)
+            rebuildAudioEngineGraph(fileFormat: file.processingFormat)
         }
+
+        // Arrancar AVAudioEngine ANTES de programar y reproducir el segmento
         if !audioEngine.isRunning {
             audioEngine.prepare()
-            try? audioEngine.start()
+            do {
+                try audioEngine.start()
+            } catch {
+                // Reconstruir una vez o activar respaldo AVAudioPlayer garantizado
+                rebuildAudioEngineGraph(fileFormat: file.processingFormat)
+                do {
+                    try audioEngine.start()
+                } catch {
+                    activateFallbackAVAudioPlayer(from: clamped)
+                    return
+                }
+            }
         }
 
         playbackGeneration &+= 1
         let activeGen = playbackGeneration
         playerNode.stop()
 
-        let clamped = max(0.0, min(duration, time))
-        let startFrame = min(totalFrames - 1, max(0, AVAudioFramePosition(clamped * fileSampleRate)))
+        let startFrame = min(max(0, totalFrames - 1), max(0, AVAudioFramePosition(clamped * fileSampleRate)))
         let remaining = max(1, totalFrames - startFrame)
         seekStartFrame = startFrame
 
@@ -271,8 +338,9 @@ final class AudioPlayerService: ObservableObject {
             file,
             startingFrame: startFrame,
             frameCount: AVAudioFrameCount(remaining),
-            at: nil
-        ) { [weak self] in
+            at: nil,
+            completionCallbackType: .dataPlayedBack
+        ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.handleSegmentNaturalCompletion(generation: activeGen)
             }
@@ -280,8 +348,48 @@ final class AudioPlayerService: ObservableObject {
         playerNode.play()
     }
 
+    private func activateFallbackAVAudioPlayer(from time: TimeInterval) {
+        guard let url = currentAudioURL else {
+            isPlaying = false
+            return
+        }
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.delegate = self
+            player.enableRate = true
+            player.rate = playbackSpeed.rawValue
+            player.currentTime = max(0.0, min(player.duration, time))
+            player.prepareToPlay()
+            if player.play() {
+                self.fallbackAudioPlayer = player
+                self.duration = max(0.1, player.duration)
+            } else {
+                self.isPlaying = false
+            }
+        } catch {
+            self.fallbackAudioPlayer = nil
+            self.isPlaying = false
+        }
+    }
+
+    private func stopFallbackPlayer() {
+        fallbackAudioPlayer?.stop()
+        fallbackAudioPlayer = nil
+    }
+
     private func handleSegmentNaturalCompletion(generation: Int) {
         guard generation == playbackGeneration, isPlaying else { return }
+        handleNaturalCompletion()
+    }
+
+    private func handleNaturalCompletion() {
+        if repeatEnabled {
+            currentTime = 0.0
+            seekStartTime = 0.0
+            updateKaraokeSynchronization(at: 0.0)
+            scheduleAndStartPlayback(from: 0.0)
+            return
+        }
         isPlaying = false
         currentTime = duration
         syncTimer?.invalidate()
@@ -290,16 +398,19 @@ final class AudioPlayerService: ObservableObject {
     }
 
     private func resolveCurrentNodePlaybackTime() -> TimeInterval? {
+        if let fb = fallbackAudioPlayer, fb.isPlaying {
+            return max(0.0, min(duration, fb.currentTime))
+        }
         guard playerNode.isPlaying,
+              audioEngine.isRunning,
               let nodeTime = playerNode.lastRenderTime,
               nodeTime.isSampleTimeValid,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
               playerTime.sampleTime >= 0 else {
             return nil
         }
-        let elapsedFrames = seekStartFrame + playerTime.sampleTime
-        let seconds = Double(elapsedFrames) / max(1.0, fileSampleRate)
-        return max(0.0, min(duration, seconds))
+        let playedSeconds = Double(playerTime.sampleTime) / max(1.0, playerTime.sampleRate)
+        return max(0.0, min(duration, seekStartTime + playedSeconds))
     }
 
     // MARK: - Sincronización Audio-Texto (Karaoke 60 Hz) y "Saltar Silencios"
@@ -323,11 +434,10 @@ final class AudioPlayerService: ObservableObject {
 
         if let exactNodeTime = resolveCurrentNodePlaybackTime() {
             currentTime = exactNodeTime
-        } else if audioFile == nil {
+        } else if audioFile == nil && fallbackAudioPlayer == nil {
             currentTime += delta * Double(playbackSpeed.rawValue)
             if currentTime >= duration {
-                currentTime = duration
-                pause()
+                handleNaturalCompletion()
                 return
             }
         }
@@ -342,8 +452,13 @@ final class AudioPlayerService: ObservableObject {
                 if saved > 0.05 {
                     totalSilenceSavedSeconds += saved
                     isCurrentlySkippingSilence = true
-                    currentTime = jumpTarget
-                    scheduleAndStartPlayback(from: jumpTarget)
+
+                    if jumpTarget >= duration - 0.12 {
+                        handleNaturalCompletion()
+                    } else {
+                        currentTime = jumpTarget
+                        scheduleAndStartPlayback(from: jumpTarget)
+                    }
 
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 380_000_000)
@@ -394,6 +509,15 @@ final class AudioPlayerService: ObservableObject {
         }
         if activeAcousticEventId != matchedEvent?.id {
             activeAcousticEventId = matchedEvent?.id
+        }
+    }
+
+    // MARK: - AVAudioPlayerDelegate (Respaldo)
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor [weak self] in
+            guard let self = self, self.fallbackAudioPlayer === player, self.isPlaying else { return }
+            self.handleNaturalCompletion()
         }
     }
 }

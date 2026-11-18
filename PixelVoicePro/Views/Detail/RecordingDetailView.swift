@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Vista 3 (Detalle y Reproducción Interactiva):
 /// Panel superior con pestañas ("Transcripción completa", "Resumen/Marcadores", "Detalles del archivo"),
@@ -22,6 +23,13 @@ struct RecordingDetailView: View {
         }
     }
 
+    enum TranscriptDisplayMode: String, CaseIterable, Identifiable {
+        case bySpeaker
+        case continuousNote
+
+        var id: String { rawValue }
+    }
+
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
@@ -39,6 +47,8 @@ struct RecordingDetailView: View {
 
     @FocusState private var isLocalSearchFocused: Bool
     @State private var selectedTab: DetailTab = .player
+    @State private var transcriptDisplayMode: TranscriptDisplayMode = .bySpeaker
+    @State private var didCopyContinuousNote: Bool = false
     @State private var localSearchQuery: String = ""
     @State private var currentSearchHitIndex: Int = 0
     @State private var selectedSpeakerIdForRename: String?
@@ -272,6 +282,21 @@ struct RecordingDetailView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+
+            Button {
+                playerService.repeatEnabled.toggle()
+            } label: {
+                Image(systemName: "repeat")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(playerService.repeatEnabled ? .white : .secondary)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        Circle()
+                            .fill(playerService.repeatEnabled ? themeManager.primaryAccent : Color.primary.opacity(0.08))
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.playerRepeat)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -422,32 +447,46 @@ struct RecordingDetailView: View {
     // MARK: - Pestaña 1: Transcripción Interactiva Sincronizada (Karaoke-Style)
 
     private var karaokeTranscriptTabView: some View {
-        ScrollViewReader { proxy in
+        let paragraphs = transcriptDisplayMode == .continuousNote
+            ? buildContinuousParagraphs(from: recording.segments)
+            : []
+
+        return ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    // Leyenda rápida de locutores con botón de renombrado directo
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(recording.speakers) { speaker in
-                                Button {
-                                    selectedSpeakerIdForRename = speaker.id
-                                    isShowingSpeakerRenameSheet = true
-                                } label: {
-                                    HStack(spacing: 5) {
-                                        Circle()
-                                            .fill(speaker.color)
-                                            .frame(width: 8, height: 8)
-                                        Text(speaker.compactLabel)
-                                            .font(.caption2.weight(.bold))
-                                        Image(systemName: "pencil")
-                                            .font(.system(size: 9))
+                    if !recording.segments.isEmpty {
+                        Picker("", selection: $transcriptDisplayMode) {
+                            Text(L10n.transcriptModeSpeakers).tag(TranscriptDisplayMode.bySpeaker)
+                            Text(L10n.transcriptModeContinuous).tag(TranscriptDisplayMode.continuousNote)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    if transcriptDisplayMode == .bySpeaker && !recording.speakers.isEmpty {
+                        // Leyenda rápida de locutores con botón de renombrado directo
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(recording.speakers) { speaker in
+                                    Button {
+                                        selectedSpeakerIdForRename = speaker.id
+                                        isShowingSpeakerRenameSheet = true
+                                    } label: {
+                                        HStack(spacing: 5) {
+                                            Circle()
+                                                .fill(speaker.color)
+                                                .frame(width: 8, height: 8)
+                                            Text(speaker.compactLabel)
+                                                .font(.caption2.weight(.bold))
+                                            Image(systemName: "pencil")
+                                                .font(.system(size: 9))
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(speaker.color.opacity(0.14), in: Capsule())
+                                        .foregroundStyle(speaker.color)
                                     }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(speaker.color.opacity(0.14), in: Capsule())
-                                    .foregroundStyle(speaker.color)
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -458,30 +497,35 @@ struct RecordingDetailView: View {
                         if recording.transcriptionState == .interrupted || recording.transcriptionState == .failed {
                             partialRetryBanner
                         }
-                        LazyVStack(alignment: .leading, spacing: 12) {
-                            ForEach(recording.segments) { segment in
-                                KaraokeSegmentCardView(
-                                    segment: segment,
-                                    speaker: recording.speakerProfile(for: segment.speakerId),
-                                    isSegmentActive: playerService.activeSegmentId == segment.id,
-                                    activeWordId: playerService.activeWordId,
-                                    activeAcousticEventId: playerService.activeAcousticEventId,
-                                    localSearchQuery: localSearchQuery,
-                                    onTapWord: { wordTimestamp in
-                                        playerService.seek(to: wordTimestamp.startTime, autoPlay: true)
-                                    },
-                                    onTapSegmentHeader: {
-                                        playerService.seek(to: segment.startTime, autoPlay: true)
-                                    },
-                                    onTapRenameSpeaker: {
-                                        selectedSpeakerIdForRename = segment.speakerId
-                                        isShowingSpeakerRenameSheet = true
-                                    },
-                                    onTapAcousticEvent: { event in
-                                        playerService.seek(to: event.timestamp, autoPlay: true)
-                                    }
-                                )
-                                .id(segment.id)
+
+                        if transcriptDisplayMode == .continuousNote {
+                            continuousNoteTranscriptView(paragraphs: paragraphs)
+                        } else {
+                            LazyVStack(alignment: .leading, spacing: 12) {
+                                ForEach(recording.segments) { segment in
+                                    KaraokeSegmentCardView(
+                                        segment: segment,
+                                        speaker: recording.speakerProfile(for: segment.speakerId),
+                                        isSegmentActive: playerService.activeSegmentId == segment.id,
+                                        activeWordId: playerService.activeWordId,
+                                        activeAcousticEventId: playerService.activeAcousticEventId,
+                                        localSearchQuery: localSearchQuery,
+                                        onTapWord: { wordTimestamp in
+                                            playerService.seek(to: wordTimestamp.startTime, autoPlay: true)
+                                        },
+                                        onTapSegmentHeader: {
+                                            playerService.seek(to: segment.startTime, autoPlay: true)
+                                        },
+                                        onTapRenameSpeaker: {
+                                            selectedSpeakerIdForRename = segment.speakerId
+                                            isShowingSpeakerRenameSheet = true
+                                        },
+                                        onTapAcousticEvent: { event in
+                                            playerService.seek(to: event.timestamp, autoPlay: true)
+                                        }
+                                    )
+                                    .id(segment.id)
+                                }
                             }
                         }
                     }
@@ -496,8 +540,13 @@ struct RecordingDetailView: View {
                 isLocalSearchFocused = false
             }
             .onChange(of: playerService.activeSegmentId) { _, newSegId in
-                if let targetId = newSegId, playerService.isPlaying {
-                    withAnimation(.easeInOut(duration: 0.25)) {
+                guard let targetId = newSegId, playerService.isPlaying else { return }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    if transcriptDisplayMode == .continuousNote {
+                        if let paragraphMatch = paragraphs.first(where: { $0.segmentIDs.contains(targetId) }) {
+                            proxy.scrollTo(paragraphMatch.id, anchor: .center)
+                        }
+                    } else {
                         proxy.scrollTo(targetId, anchor: .center)
                     }
                 }
@@ -978,10 +1027,19 @@ struct RecordingDetailView: View {
                 HStack(spacing: compact ? 8 : 10) {
                     skipSilencePill(compact: compact)
                     voiceIsolationPill(compact: compact)
+                    repeatPill(compact: compact)
+                }
+                VStack(spacing: 8) {
+                    HStack(spacing: compact ? 8 : 10) {
+                        skipSilencePill(compact: compact)
+                        voiceIsolationPill(compact: compact)
+                    }
+                    repeatPill(compact: compact)
                 }
                 VStack(spacing: 8) {
                     skipSilencePill(compact: compact)
                     voiceIsolationPill(compact: compact)
+                    repeatPill(compact: compact)
                 }
             }
         }
@@ -1009,6 +1067,212 @@ struct RecordingDetailView: View {
         ) {
             playerService.voiceIsolationEnabled.toggle()
         }
+    }
+
+    private func repeatPill(compact: Bool) -> some View {
+        audioEnhancementPill(
+            title: L10n.playerRepeat,
+            systemImage: "repeat",
+            isEnabled: playerService.repeatEnabled,
+            activeTint: PixelTheme.accentIndigo,
+            compact: compact
+        ) {
+            playerService.repeatEnabled.toggle()
+        }
+    }
+
+    // MARK: - Vista Continua Tipo Nota de Transcripción (Sin IA requerida)
+
+    private struct ContinuousTranscriptParagraph: Identifiable {
+        let id: UUID
+        let startTime: TimeInterval
+        let segmentIDs: Set<UUID>
+        let segments: [TranscriptSegment]
+        let plainText: String
+    }
+
+    private func continuousNoteTranscriptView(paragraphs: [ContinuousTranscriptParagraph]) -> some View {
+        let totalWords = recording.segments.reduce(0) { sum, seg in
+            sum + max(seg.words.count, seg.text.split(separator: " ").count)
+        }
+        let fullNoteText = paragraphs.map(\.plainText).joined(separator: "\n\n")
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Label(
+                    "\(totalWords)",
+                    systemImage: "doc.plaintext"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button {
+                    UIPasteboard.general.string = fullNoteText
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        didCopyContinuousNote = true
+                    }
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 1_800_000_000)
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            didCopyContinuousNote = false
+                        }
+                    }
+                } label: {
+                    Label(
+                        didCopyContinuousNote ? L10n.transcriptCopied : L10n.transcriptCopyAll,
+                        systemImage: didCopyContinuousNote ? "checkmark" : "doc.on.doc"
+                    )
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(didCopyContinuousNote ? .white : themeManager.primaryAccent)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .liquidGlassCapsule(
+                        tint: didCopyContinuousNote ? PixelTheme.successEmerald : themeManager.primaryAccent.opacity(0.14)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            LazyVStack(alignment: .leading, spacing: 14) {
+                ForEach(paragraphs) { paragraph in
+                    VStack(alignment: .leading, spacing: 4) {
+                        if paragraphs.count > 1 {
+                            Button {
+                                playerService.seek(to: paragraph.startTime, autoPlay: true)
+                            } label: {
+                                Text(ExactDateFormatter.exactAudioPosition(paragraph.startTime))
+                                    .font(.system(.caption2, design: .monospaced).weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        Text(attributedParagraphText(for: paragraph))
+                            .font(.body)
+                            .lineSpacing(6)
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .id(paragraph.id)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+            )
+        }
+    }
+
+    private func buildContinuousParagraphs(from segments: [TranscriptSegment]) -> [ContinuousTranscriptParagraph] {
+        guard !segments.isEmpty else { return [] }
+        var result: [ContinuousTranscriptParagraph] = []
+        var buffer: [TranscriptSegment] = []
+        var wordCount = 0
+
+        func flushBuffer() {
+            guard let first = buffer.first else { return }
+            var plain = ""
+            for seg in buffer {
+                let text = seg.words.isEmpty
+                    ? seg.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    : LocalizationHelper.smartJoinWords(seg.words.map(\.word))
+                guard !text.isEmpty else { continue }
+                if LocalizationHelper.needsSpaceBetween(previous: plain, next: text) {
+                    plain += " " + text
+                } else {
+                    plain += text
+                }
+            }
+            result.append(
+                ContinuousTranscriptParagraph(
+                    id: first.id,
+                    startTime: first.startTime,
+                    segmentIDs: Set(buffer.map(\.id)),
+                    segments: buffer,
+                    plainText: plain
+                )
+            )
+            buffer.removeAll(keepingCapacity: true)
+            wordCount = 0
+        }
+
+        for seg in segments {
+            if let prev = buffer.last {
+                let gap = seg.startTime - prev.endTime
+                let prevTrimmed = prev.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let endsSentence = prevTrimmed.last.map { ".?!…。？！".contains($0) } ?? false
+                if gap >= 2.0 || (wordCount >= 55 && endsSentence) || wordCount >= 95 {
+                    flushBuffer()
+                }
+            }
+            buffer.append(seg)
+            wordCount += max(seg.words.count, seg.text.split(separator: " ").count)
+        }
+        flushBuffer()
+        return result
+    }
+
+    private func attributedParagraphText(for paragraph: ContinuousTranscriptParagraph) -> AttributedString {
+        var output = AttributedString("")
+        var plainSoFar = ""
+        let query = localSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        for segment in paragraph.segments {
+            if !segment.words.isEmpty {
+                for word in segment.words {
+                    let token = word.word.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !token.isEmpty else { continue }
+                    if LocalizationHelper.needsSpaceBetween(previous: plainSoFar, next: token) {
+                        output.append(AttributedString(" "))
+                        plainSoFar += " "
+                    }
+                    var attr = AttributedString(token)
+                    if playerService.activeWordId == word.id {
+                        attr.foregroundColor = themeManager.primaryAccent
+                        attr.backgroundColor = themeManager.primaryAccent.opacity(0.20)
+                        attr.font = .body.weight(.semibold)
+                    } else if !query.isEmpty, token.localizedCaseInsensitiveContains(query) {
+                        attr.backgroundColor = Color.yellow.opacity(0.38)
+                    }
+                    output.append(attr)
+                    plainSoFar += token
+                }
+            } else {
+                let segText = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !segText.isEmpty else { continue }
+                if LocalizationHelper.needsSpaceBetween(previous: plainSoFar, next: segText) {
+                    output.append(AttributedString(" "))
+                    plainSoFar += " "
+                }
+                var segAttr = AttributedString(segText)
+                if !query.isEmpty {
+                    var cursor = segText.startIndex
+                    while cursor < segText.endIndex,
+                          let match = segText.range(
+                            of: query,
+                            options: [.caseInsensitive, .diacriticInsensitive],
+                            range: cursor..<segText.endIndex
+                          ) {
+                        if let lo = AttributedString.Index(match.lowerBound, within: segAttr),
+                           let hi = AttributedString.Index(match.upperBound, within: segAttr) {
+                            segAttr[lo..<hi].backgroundColor = Color.yellow.opacity(0.38)
+                        }
+                        cursor = match.upperBound
+                    }
+                }
+                output.append(segAttr)
+                plainSoFar += segText
+            }
+        }
+        return output
     }
 
     private func audioEnhancementPill(

@@ -163,16 +163,5 @@ struct FolderRecordingsView: View {
         .toolbar(.visible, for: .navigationBar)
         .navigationTitle(folder.title)
         .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    viewModel.isShowingSettingsSheet = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.body.weight(.medium))
-                }
-                .accessibilityLabel(L10n.settingsTitle)
-            }
-        }
     }
 }

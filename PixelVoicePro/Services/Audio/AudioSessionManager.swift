@@ -79,17 +79,10 @@ final class AudioSessionManager: ObservableObject {
         updateCurrentRouteDescription()
     }
 
-    /// Configura `AVAudioSession` explícitamente hacia el altavoz principal inferior del iPhone (o auriculares externos) al reproducir.
+    /// Configura `AVAudioSession` para reproducción limpia (altavoz estéreo, AirPods/Bluetooth A2DP y segundo plano sin activar el micrófono).
     func configureForPlayback() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(
-            .playAndRecord,
-            mode: .default,
-            options: [.allowBluetooth, .defaultToSpeaker]
-        )
-        if !hasExternalOutputRoute(in: session) {
-            try? session.overrideOutputAudioPort(.speaker)
-        }
+        try session.setCategory(.playback, mode: .default, options: [])
         try session.setActive(true, options: .notifyOthersOnDeactivation)
         updateCurrentRouteDescription()
     }

@@ -690,28 +690,48 @@ enum L10n {
     static var playerVoiceIsolation: String {
         tr("player.voice_isolation", "Voice Isolation")
     }
+    static var playerRepeat: String {
+        tr("player.repeat", "Repeat")
+    }
+    static var transcriptModeSpeakers: String {
+        tr("transcript.mode.speakers", "By Speaker")
+    }
+    static var transcriptModeContinuous: String {
+        tr("transcript.mode.continuous", "Note View")
+    }
+    static var transcriptCopyAll: String {
+        tr("transcript.copy_all", "Copy Note")
+    }
+    static var transcriptCopied: String {
+        tr("transcript.copied", "Copied")
+    }
 
     // MARK: - Helper de unión de palabras (soporte CJK/sin espacios)
 
     /// Une tokens de transcripción respetando idiomas sin espacios entre palabras (chino, japonés, tailandés)
     /// mientras conserva espacios normales en idiomas occidentales, cirílico, coreano y árabe.
+    static func needsSpaceBetween(previous: String, next: String) -> Bool {
+        guard !previous.isEmpty, !next.isEmpty else { return false }
+        if let last = previous.unicodeScalars.last, let first = next.unicodeScalars.first,
+           isNoSpaceScriptOrPunctuation(last) && isNoSpaceScriptOrPunctuation(first) {
+            return false
+        }
+        if let first = next.unicodeScalars.first, isClosingPunctuation(first) {
+            return false
+        }
+        return true
+    }
+
     static func smartJoinWords(_ words: [String]) -> String {
         guard !words.isEmpty else { return "" }
         var result = ""
         for word in words {
             let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
-            if result.isEmpty {
-                result = trimmed
-                continue
-            }
-            if let last = result.unicodeScalars.last, let first = trimmed.unicodeScalars.first,
-               isNoSpaceScriptOrPunctuation(last) && isNoSpaceScriptOrPunctuation(first) {
-                result += trimmed
-            } else if let first = trimmed.unicodeScalars.first, isClosingPunctuation(first) {
-                result += trimmed
-            } else {
+            if needsSpaceBetween(previous: result, next: trimmed) {
                 result += " " + trimmed
+            } else {
+                result += trimmed
             }
         }
         return result

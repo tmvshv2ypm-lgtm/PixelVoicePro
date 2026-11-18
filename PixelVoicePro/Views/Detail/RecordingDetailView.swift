@@ -1183,9 +1183,9 @@ struct RecordingDetailView: View {
             for seg in buffer {
                 let text = seg.words.isEmpty
                     ? seg.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    : LocalizationHelper.smartJoinWords(seg.words.map(\.word))
+                    : L10n.smartJoinWords(seg.words.map(\.word))
                 guard !text.isEmpty else { continue }
-                if LocalizationHelper.needsSpaceBetween(previous: plain, next: text) {
+                if L10n.needsSpaceBetween(previous: plain, next: text) {
                     plain += " " + text
                 } else {
                     plain += text
@@ -1230,7 +1230,7 @@ struct RecordingDetailView: View {
                 for word in segment.words {
                     let token = word.word.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !token.isEmpty else { continue }
-                    if LocalizationHelper.needsSpaceBetween(previous: plainSoFar, next: token) {
+                    if L10n.needsSpaceBetween(previous: plainSoFar, next: token) {
                         output.append(AttributedString(" "))
                         plainSoFar += " "
                     }
@@ -1248,7 +1248,7 @@ struct RecordingDetailView: View {
             } else {
                 let segText = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !segText.isEmpty else { continue }
-                if LocalizationHelper.needsSpaceBetween(previous: plainSoFar, next: segText) {
+                if L10n.needsSpaceBetween(previous: plainSoFar, next: segText) {
                     output.append(AttributedString(" "))
                     plainSoFar += " "
                 }

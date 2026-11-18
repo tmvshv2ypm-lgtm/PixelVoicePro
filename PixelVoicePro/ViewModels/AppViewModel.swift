@@ -475,9 +475,25 @@ final class AppViewModel: ObservableObject {
         }
 
         final class BgExecutionCoordinator: @unchecked Sendable {
-            let lock = NSLock()
-            var taskID: UIBackgroundTaskIdentifier = .invalid
-            var worker: Task<BackgroundProcessedResult, Never>?
+            private let lock = NSLock()
+            private var taskID: UIBackgroundTaskIdentifier = .invalid
+            private var worker: Task<BackgroundProcessedResult, Never>?
+
+            func register(worker: Task<BackgroundProcessedResult, Never>, taskID: UIBackgroundTaskIdentifier) {
+                lock.lock()
+                self.worker = worker
+                self.taskID = taskID
+                lock.unlock()
+            }
+
+            func takeSnapshotAndInvalidate() -> (worker: Task<BackgroundProcessedResult, Never>?, taskID: UIBackgroundTaskIdentifier) {
+                lock.lock()
+                let currentWorker = worker
+                let currentTaskID = taskID
+                taskID = .invalid
+                lock.unlock()
+                return (currentWorker, currentTaskID)
+            }
         }
 
         let coordinator = BgExecutionCoordinator()
@@ -493,7 +509,7 @@ final class AppViewModel: ObservableObject {
         let recordingTitle = recording.title
         let recordingID = recording.id
 
-        let worker = Task.detached(priority: .utility) {
+        let worker = Task.detached(priority: .utility) { [weak self] in
             await MainActor.run { [weak self] in
                 self?.backgroundProcessingProgress = 0.12
                 self?.backgroundProcessingStatus = L10n.bgAnalyzingSpeakers
@@ -542,18 +558,11 @@ final class AppViewModel: ObservableObject {
             )
         }
 
-        coordinator.lock.lock()
-        coordinator.worker = worker
-        coordinator.taskID = UIApplication.shared.beginBackgroundTask(
+        let bgTaskID = UIApplication.shared.beginBackgroundTask(
             withName: "PixelVoiceProPostProcess_\(recordingID.uuidString.prefix(6))"
         ) { [weak self] in
-            coordinator.lock.lock()
-            let currentWorker = coordinator.worker
-            let taskIDToEnd = coordinator.taskID
-            coordinator.taskID = .invalid
-            coordinator.lock.unlock()
-
-            currentWorker?.cancel()
+            let snapshot = coordinator.takeSnapshotAndInvalidate()
+            snapshot.worker?.cancel()
             Task { @MainActor [weak self] in
                 if recording.transcriptionState == .processing {
                     recording.transcriptionState = .interrupted
@@ -564,20 +573,17 @@ final class AppViewModel: ObservableObject {
                     }
                     self?.saveChanges()
                 }
-                if taskIDToEnd != .invalid {
-                    UIApplication.shared.endBackgroundTask(taskIDToEnd)
+                if snapshot.taskID != .invalid {
+                    UIApplication.shared.endBackgroundTask(snapshot.taskID)
                 }
             }
         }
-        coordinator.lock.unlock()
+        coordinator.register(worker: worker, taskID: bgTaskID)
 
         defer {
-            coordinator.lock.lock()
-            let taskIDToEnd = coordinator.taskID
-            coordinator.taskID = .invalid
-            coordinator.lock.unlock()
-            if taskIDToEnd != .invalid {
-                UIApplication.shared.endBackgroundTask(taskIDToEnd)
+            let snapshot = coordinator.takeSnapshotAndInvalidate()
+            if snapshot.taskID != .invalid {
+                UIApplication.shared.endBackgroundTask(snapshot.taskID)
             }
         }
 

@@ -382,16 +382,16 @@ final class AudioRecorderService: ObservableObject {
         self.isLiveTranscriptionEnabled = false
         self.hadLiveTranscriptionActiveEntireSession = false
 
-        clockLock.lock()
-        self.lastLiveDSPTimestamp = -1.0
-        self.lastLiveDSPPublishUptime = 0.0
-        clockLock.unlock()
+        clockLock.withLock {
+            self.lastLiveDSPTimestamp = -1.0
+            self.lastLiveDSPPublishUptime = 0.0
+        }
 
-        meteringLock.lock()
-        self.latestMeasuredRMS = 0.0
-        self.latestCurrentDecibels = -60.0
-        self.latestSpectralBands = Array(repeating: 0.05, count: 28)
-        meteringLock.unlock()
+        meteringLock.withLock {
+            self.latestMeasuredRMS = 0.0
+            self.latestCurrentDecibels = -60.0
+            self.latestSpectralBands = Array(repeating: 0.05, count: 28)
+        }
 
         resetIsolatedServicesForNewSession()
         diarizationService.reset()
@@ -431,14 +431,14 @@ final class AudioRecorderService: ObservableObject {
         let firstChunkName = Self.chunkFilename(index: 0, format: selectedFormat)
         let firstChunkURL = sessionDir.appendingPathComponent(firstChunkName)
 
-        fileWriteLock.lock()
-        self.outputAudioFile = try AVAudioFile(
-            forWriting: firstChunkURL,
-            settings: settings,
-            commonFormat: recordingFormat.commonFormat,
-            interleaved: recordingFormat.isInterleaved
-        )
-        fileWriteLock.unlock()
+        try fileWriteLock.withLock {
+            self.outputAudioFile = try AVAudioFile(
+                forWriting: firstChunkURL,
+                settings: settings,
+                commonFormat: recordingFormat.commonFormat,
+                interleaved: recordingFormat.isInterleaved
+            )
+        }
         self.chunkFileNames = [firstChunkName]
         persistSessionCheckpointSnapshot()
 
@@ -600,9 +600,9 @@ final class AudioRecorderService: ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
 
-        fileWriteLock.lock()
-        outputAudioFile = nil
-        fileWriteLock.unlock()
+        fileWriteLock.withLock {
+            outputAudioFile = nil
+        }
 
         // Esperar cualquier rotación de chunk en vuelo antes de unir archivos
         await withCheckedContinuation { continuation in
@@ -872,11 +872,9 @@ final class AudioRecorderService: ObservableObject {
                 // Rotar el fragmento en disco cada 30s para garantizar audio salvable incluso ante cierre abrupto de iOS
                 self.rotateAudioChunkIfNeeded(at: currentElapsed)
 
-                self.meteringLock.lock()
-                let measuredRMS = self.latestMeasuredRMS
-                let measuredDB = self.latestCurrentDecibels
-                let bandsSnapshot = self.latestSpectralBands
-                self.meteringLock.unlock()
+                let (measuredRMS, measuredDB, bandsSnapshot) = self.meteringLock.withLock {
+                    (self.latestMeasuredRMS, self.latestCurrentDecibels, self.latestSpectralBands)
+                }
 
                 let sample = max(0.04, min(1.0, measuredRMS))
 

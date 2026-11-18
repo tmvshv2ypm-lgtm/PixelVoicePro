@@ -46,8 +46,7 @@ final class AudioPlayerService: ObservableObject {
     private var currentRecording: VoiceRecording?
     private var currentAudioURL: URL?
 
-    override init() {
-        super.init()
+    init() {
         configureVoiceIsolationEQProfile()
     }
 

@@ -92,6 +92,7 @@ final class AppViewModel: ObservableObject {
 
     /// Estado del coordinador de post-procesamiento en segundo plano (sin bloquear la UI)
     @Published var isBackgroundProcessingActive: Bool = false
+    @Published var activeProcessingRecordingID: UUID?
     @Published var backgroundProcessingTitle: String = ""
     @Published var backgroundProcessingProgress: Double = 0.0
     @Published var backgroundProcessingStatus: String = ""
@@ -124,9 +125,16 @@ final class AppViewModel: ObservableObject {
         self.modelContext = context
         fetchRecordings()
 
-        if recordings.isEmpty && trashedRecordings.isEmpty && !UserDefaults.standard.bool(forKey: didSeedSampleKey) {
+        let hasLiveRecoveryWork = !RecordingStorageService.discoverPendingRecoveryCheckpoints().isEmpty
+        if recordings.isEmpty && trashedRecordings.isEmpty && !hasLiveRecoveryWork && !UserDefaults.standard.bool(forKey: didSeedSampleKey) {
             seedInitialSampleRecordings()
             UserDefaults.standard.set(true, forKey: didSeedSampleKey)
+        }
+
+        if hasLiveRecoveryWork {
+            Task { @MainActor [weak self] in
+                await self?.recoverInterruptedSessionsIfNeeded()
+            }
         }
     }
 
@@ -136,6 +144,8 @@ final class AppViewModel: ObservableObject {
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         if let fetched = try? context.fetch(descriptor) {
+            let activeJobIDs = Set(pendingBackgroundJobs.map { $0.recording.id } + (activeProcessingRecordingID.map { [$0] } ?? []))
+
             // Auto-purgar notas cuya retención de 30 días en Papelera ya expiró
             var remaining: [VoiceRecording] = []
             for rec in fetched {
@@ -156,12 +166,90 @@ final class AppViewModel: ObservableObject {
                 if rec.title.hasPrefix("Grabación de la ") || rec.title == "__AUTO_SEQUENTIAL_TITLE__" {
                     rec.title = L10n.recordingDefaultTitle(idx + 1)
                 }
+                // Evitar estados atascados en "Transcribiendo..." si la app se cerró antes de completar el post-procesado
+                if (rec.isProcessingBackground || rec.transcriptionState == .processing) && !activeJobIDs.contains(rec.id) {
+                    rec.transcriptionState = .interrupted
+                    rec.transcriptionErrorMessage = L10n.transcriptionErrorInterrupted
+                    rec.isProcessingBackground = false
+                    if rec.segments.isEmpty {
+                        rec.transcriptionEngineUsed = L10n.transcriptionBadgeInterrupted
+                    }
+                }
                 RecordingStorageService.ensurePlayableAudioFileExists(for: rec)
             }
             try? context.save()
             recordings = active.sorted { $0.createdAt > $1.createdAt }
             trashedRecordings = trashed.sorted { ($0.deletedAt ?? $0.createdAt) > ($1.deletedAt ?? $1.createdAt) }
         }
+    }
+
+    /// Rescata automáticamente fragmentos de audio grabados en disco si iOS cerró la app bruscamente en segundo plano.
+    private func recoverInterruptedSessionsIfNeeded() async {
+        let checkpoints = RecordingStorageService.discoverPendingRecoveryCheckpoints()
+        guard !checkpoints.isEmpty else { return }
+
+        for cp in checkpoints {
+            let sessionDir = RecordingStorageService.sessionDirectoryURL(for: cp.sessionID)
+            let chunkURLs = cp.chunkFileNames.map { sessionDir.appendingPathComponent($0) }
+            let format = AudioFormatOption(rawValue: cp.formatRaw) ?? .m4a
+            let safeTimestamp = ExactDateFormatter.filenameTimestamp(from: cp.createdAt)
+            let recoveredFileName = "PixelVoice_Recovered_\(safeTimestamp)_\(cp.sessionID.uuidString.prefix(6)).\(format.rawValue)"
+            let destURL = RecordingStorageService.audioFileURL(for: recoveredFileName)
+
+            let stitched = await RecordingStorageService.finalizeAndStitchChunks(
+                chunkURLs: chunkURLs,
+                destinationURL: destURL,
+                format: format
+            )
+
+            guard stitched.url != nil, stitched.duration >= 0.4 else {
+                // Solo limpiar carpetas sin audio útil
+                RecordingStorageService.removeSessionDirectory(sessionID: cp.sessionID)
+                continue
+            }
+
+            let resolvedTitle = cp.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nextSequentialTitle()
+                : cp.title
+            let resolvedDuration = max(cp.estimatedDuration, stitched.duration)
+            let fileSize = AudioRecorderService.queryFileSizeBytes(at: destURL)
+            let sha256 = AudioRecorderService.computeSHA256Streaming(at: destURL)
+
+            let recoveredRecording = VoiceRecording(
+                title: resolvedTitle,
+                createdAt: cp.createdAt,
+                endedAt: cp.createdAt.addingTimeInterval(resolvedDuration),
+                audioFileName: recoveredFileName,
+                format: format,
+                sampleRate: cp.sampleRate,
+                bitRate: format == .m4a ? 192000 : Int(cp.sampleRate * 16),
+                channelCount: max(1, cp.channelCount),
+                duration: resolvedDuration,
+                fileSizeBytes: fileSize,
+                sha256Hash: sha256,
+                isFavorite: false,
+                isProcessingBackground: false,
+                transcriptionEngineUsed: L10n.transcriptionBadgeInterrupted,
+                transcriptionState: .interrupted,
+                transcriptionErrorMessage: L10n.transcriptionErrorSessionRecovered,
+                tags: cp.tags,
+                speakers: cp.speakers.isEmpty ? [SpeakerProfile.createDefault(number: 1)] : cp.speakers,
+                segments: [],
+                acousticEvents: [],
+                bookmarks: cp.bookmarks,
+                waveformSamples: cp.waveformSamples,
+                silenceIntervals: []
+            )
+            recoveredRecording.recalculateSpeakerStatistics()
+
+            if let context = modelContext {
+                context.insert(recoveredRecording)
+                try? context.save()
+            }
+            RecordingStorageService.removeSessionDirectory(sessionID: cp.sessionID)
+        }
+
+        fetchRecordings()
     }
 
     func nextSequentialTitle() -> String {
@@ -322,6 +410,16 @@ final class AppViewModel: ObservableObject {
     // MARK: - Post-Procesamiento en Segundo Plano (No Bloqueante)
 
     func enqueueBackgroundPostProcessing(for recording: VoiceRecording, payload: BackgroundPostProcessingPayload) {
+        // Evitar duplicar si ya está en cola o corriendo
+        guard activeProcessingRecordingID != recording.id,
+              !pendingBackgroundJobs.contains(where: { $0.recording.id == recording.id }) else {
+            return
+        }
+
+        recording.transcriptionState = .processing
+        recording.transcriptionErrorMessage = ""
+        saveChanges()
+
         pendingBackgroundJobs.append((recording, payload))
         activeBackgroundJobsCount = pendingBackgroundJobs.count + (isBackgroundProcessingActive ? 1 : 0)
 
@@ -332,6 +430,7 @@ final class AppViewModel: ObservableObject {
             while !self.pendingBackgroundJobs.isEmpty {
                 let job = self.pendingBackgroundJobs.removeFirst()
                 self.isBackgroundProcessingActive = true
+                self.activeProcessingRecordingID = job.recording.id
                 self.backgroundProcessingTitle = job.recording.title
                 self.backgroundProcessingProgress = 0.08
                 self.backgroundProcessingStatus = L10n.bgPreparing
@@ -339,6 +438,7 @@ final class AppViewModel: ObservableObject {
 
                 await self.executeBackgroundJob(recording: job.recording, payload: job.payload)
             }
+            self.activeProcessingRecordingID = nil
             self.isBackgroundProcessingActive = false
             self.backgroundProcessingProgress = 1.0
             self.backgroundProcessingStatus = ""
@@ -347,13 +447,40 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    @MainActor
+    func retryTranscription(for recording: VoiceRecording, bypassShortAudioFilter: Bool = true) {
+        let fileURL = RecordingStorageService.audioFileURL(for: recording.audioFileName)
+        let payload = BackgroundPostProcessingPayload(
+            recordingID: recording.id,
+            audioFileURL: fileURL,
+            totalDuration: max(0.5, recording.duration),
+            capturedWords: [],
+            hadLiveTranscriptionEntireSession: false,
+            bypassShortFilter: bypassShortAudioFilter,
+            transcriptionService: SpeechTranscriptionService(),
+            diarizationService: SpeakerDiarizationService(),
+            acousticAnalyzer: AcousticEventAnalyzer()
+        )
+        enqueueBackgroundPostProcessing(for: recording, payload: payload)
+    }
+
     private func executeBackgroundJob(recording: VoiceRecording, payload: BackgroundPostProcessingPayload) async {
-        let bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "PixelVoiceProPostProcess_\(recording.id.uuidString.prefix(6))")
-        defer {
-            if bgTaskID != .invalid {
-                UIApplication.shared.endBackgroundTask(bgTaskID)
-            }
+        struct BackgroundProcessedResult: Sendable {
+            let outcome: SpeechTranscriptionService.PostProcessOutcome
+            let speakers: [SpeakerProfile]
+            let events: [AcousticEvent]
+            let silences: [SilenceInterval]
+            let sha256: String
+            let fileSize: Int64
         }
+
+        final class BgExecutionCoordinator: @unchecked Sendable {
+            let lock = NSLock()
+            var taskID: UIBackgroundTaskIdentifier = .invalid
+            var worker: Task<BackgroundProcessedResult, Never>?
+        }
+
+        let coordinator = BgExecutionCoordinator()
 
         let diarizer = payload.diarizationService
         let analyzer = payload.acousticAnalyzer
@@ -362,16 +489,11 @@ final class AppViewModel: ObservableObject {
         let duration = payload.totalDuration
         let existingWords = payload.capturedWords
         let skipOfflineSoundAnalysis = payload.hadLiveTranscriptionEntireSession
+        let bypassShortFilter = payload.bypassShortFilter
+        let recordingTitle = recording.title
+        let recordingID = recording.id
 
-        let result: (
-            segments: [TranscriptSegment],
-            engine: String,
-            speakers: [SpeakerProfile],
-            events: [AcousticEvent],
-            silences: [SilenceInterval],
-            sha256: String,
-            fileSize: Int64
-        ) = await Task.detached(priority: .utility) {
+        let worker = Task.detached(priority: .utility) {
             await MainActor.run { [weak self] in
                 self?.backgroundProcessingProgress = 0.12
                 self?.backgroundProcessingStatus = L10n.bgAnalyzingSpeakers
@@ -382,7 +504,7 @@ final class AppViewModel: ObservableObject {
                 self?.backgroundProcessingProgress = 0.18
                 self?.backgroundProcessingStatus = L10n.bgDetectingEvents
             }
-            if !skipOfflineSoundAnalysis {
+            if !skipOfflineSoundAnalysis && !Task.isCancelled {
                 await analyzer.analyzeCompleteAudioFileIfNeeded(at: fileURL)
             }
 
@@ -390,12 +512,13 @@ final class AppViewModel: ObservableObject {
             let silences = analyzer.silenceIntervals
             let speakers = diarizer.detectedSpeakers
 
-            let processed = await transcriber.postProcessRecording(
+            let outcome = await transcriber.postProcessRecording(
                 audioFileURL: fileURL,
                 totalDuration: duration,
                 existingWords: existingWords,
                 diarizer: diarizer,
                 acousticEvents: events,
+                bypassShortAudioFilter: bypassShortFilter,
                 onProgress: { [weak self] progress, status in
                     self?.backgroundProcessingProgress = max(0.20, min(0.94, progress))
                     self?.backgroundProcessingStatus = status
@@ -409,30 +532,87 @@ final class AppViewModel: ObservableObject {
             let fileSize = AudioRecorderService.queryFileSizeBytes(at: fileURL)
             let sha256 = AudioRecorderService.computeSHA256Streaming(at: fileURL)
 
-            return (
-                processed.segments,
-                processed.engineDescription,
-                speakers,
-                events,
-                silences,
-                sha256,
-                fileSize
+            return BackgroundProcessedResult(
+                outcome: outcome,
+                speakers: speakers,
+                events: events,
+                silences: silences,
+                sha256: sha256,
+                fileSize: fileSize
             )
-        }.value
+        }
 
-        // Verificar que la grabación no fue eliminada mientras se procesaba en segundo plano
+        coordinator.lock.lock()
+        coordinator.worker = worker
+        coordinator.taskID = UIApplication.shared.beginBackgroundTask(
+            withName: "PixelVoiceProPostProcess_\(recordingID.uuidString.prefix(6))"
+        ) { [weak self] in
+            coordinator.lock.lock()
+            let currentWorker = coordinator.worker
+            let taskIDToEnd = coordinator.taskID
+            coordinator.taskID = .invalid
+            coordinator.lock.unlock()
+
+            currentWorker?.cancel()
+            Task { @MainActor [weak self] in
+                if recording.transcriptionState == .processing {
+                    recording.transcriptionState = .interrupted
+                    recording.transcriptionErrorMessage = L10n.transcriptionErrorInterrupted
+                    recording.isProcessingBackground = false
+                    if recording.segments.isEmpty {
+                        recording.transcriptionEngineUsed = L10n.transcriptionBadgeInterrupted
+                    }
+                    self?.saveChanges()
+                }
+                if taskIDToEnd != .invalid {
+                    UIApplication.shared.endBackgroundTask(taskIDToEnd)
+                }
+            }
+        }
+        coordinator.lock.unlock()
+
+        defer {
+            coordinator.lock.lock()
+            let taskIDToEnd = coordinator.taskID
+            coordinator.taskID = .invalid
+            coordinator.lock.unlock()
+            if taskIDToEnd != .invalid {
+                UIApplication.shared.endBackgroundTask(taskIDToEnd)
+            }
+        }
+
+        let result = await worker.value
+        _ = recordingTitle
+
+        // Verificar que la grabación siga activa (no enviada a papelera ni eliminada)
         if recordings.contains(where: { $0.id == recording.id }) {
-            recording.speakers = result.speakers
-            recording.segments = result.segments
+            let previousSpeakersByID = Dictionary(uniqueKeysWithValues: recording.speakers.map { ($0.id, $0) })
+            let mergedSpeakers = result.speakers.map { spk -> SpeakerProfile in
+                if let old = previousSpeakersByID[spk.id] {
+                    var copy = spk
+                    copy.customName = old.customName
+                    copy.colorHex = old.colorHex
+                    return copy
+                }
+                return spk
+            }
+
+            recording.speakers = mergedSpeakers.isEmpty ? recording.speakers : mergedSpeakers
+            if !result.outcome.segments.isEmpty || result.outcome.state == .noSpeechFound || result.outcome.state == .tooShort {
+                recording.segments = result.outcome.segments
+            }
             recording.acousticEvents = result.events
             recording.silenceIntervals = result.silences
             recording.sha256Hash = result.sha256
             recording.fileSizeBytes = result.fileSize
-            recording.transcriptionEngineUsed = result.engine
+            recording.transcriptionEngineUsed = result.outcome.engineDescription
+            recording.transcriptionState = result.outcome.state
+            recording.transcriptionErrorMessage = result.outcome.errorMessage
 
             let config = TranscriptionConfiguration.load()
-            if config.enableAIRefinementOnFinish,
-               !result.segments.isEmpty,
+            if result.outcome.state == .completed,
+               config.enableAIRefinementOnFinish,
+               !result.outcome.segments.isEmpty,
                AdaptiveAICapability.canRunAIRefinement(config: config) {
                 await MainActor.run { [weak self] in
                     self?.backgroundProcessingProgress = 0.98
@@ -440,7 +620,7 @@ final class AppViewModel: ObservableObject {
                 }
                 let locale = SpeechTranscriptionService.resolveRecognitionLocale(for: config.localeIdentifier)
                 if let outcome = try? await IntelligentRefinementService().refineRecording(
-                    segments: result.segments,
+                    segments: result.outcome.segments,
                     locale: locale,
                     config: config,
                     mode: .fixTranscriptAndSummarize
@@ -469,6 +649,9 @@ final class AppViewModel: ObservableObject {
         let previousSpeakersByID = Dictionary(uniqueKeysWithValues: recording.speakers.map { ($0.id, $0) })
         let totalDuration = max(0.5, recording.duration)
 
+        recording.transcriptionState = .processing
+        recording.transcriptionErrorMessage = ""
+
         let processed = await Task.detached(priority: .userInitiated) {
             let diarizer = SpeakerDiarizationService()
             diarizer.analyzeAudioFileOfflineIfNeeded(url: fileURL)
@@ -487,12 +670,12 @@ final class AppViewModel: ObservableObject {
                 existingWords: [],
                 diarizer: diarizer,
                 acousticEvents: events,
-                forceFullAnalysis: true
+                forceFullAnalysis: true,
+                bypassShortAudioFilter: true
             )
 
             return (
-                segments: speechResult.segments,
-                engine: speechResult.engineDescription,
+                outcome: speechResult,
                 speakers: detectedSpeakers,
                 events: events,
                 silences: silences
@@ -511,13 +694,16 @@ final class AppViewModel: ObservableObject {
         }
 
         recording.speakers = mergedSpeakers.isEmpty ? recording.speakers : mergedSpeakers
-        recording.segments = processed.segments
+        recording.segments = processed.outcome.segments
         recording.acousticEvents = processed.events
         recording.silenceIntervals = processed.silences
-        recording.transcriptionEngineUsed = processed.engine
+        recording.transcriptionEngineUsed = processed.outcome.engineDescription
+        recording.transcriptionState = processed.outcome.state
+        recording.transcriptionErrorMessage = processed.outcome.errorMessage
+        recording.isProcessingBackground = false
         recording.recalculateSpeakerStatistics()
         saveChanges()
-        return processed.engine
+        return processed.outcome.engineDescription
     }
 
     @MainActor

@@ -2,6 +2,7 @@ import Foundation
 import Speech
 import AVFoundation
 import CoreMedia
+import Accelerate
 
 /// Configuración del motor híbrido de transcripción (Apple Speech / SpeechAnalyzer iOS 26+ + Post-procesamiento + Whisper / IA Adaptativa).
 struct TranscriptionConfiguration: Codable {
@@ -401,9 +402,31 @@ final class SpeechTranscriptionService {
 
     // MARK: - Post-Procesamiento Completo por Fragmentos Seguros de 45 Segundos (Clases Largas)
 
+    struct PostProcessOutcome: Sendable {
+        let segments: [TranscriptSegment]
+        let engineDescription: String
+        let state: TranscriptionProcessingState
+        let errorMessage: String
+    }
+
+    private struct ChunkBatchResult {
+        let words: [WordTimestamp]
+        let processedNonSilentChunks: Int
+        let recognizerAvailable: Bool
+        let fatalErrorsCount: Int
+        let lastErrorMessage: String
+        let wasCancelled: Bool
+    }
+
+    private struct ChunkRecognizeOutcome {
+        let words: [WordTimestamp]
+        let errorDescription: String?
+        let isSystemFailure: Bool
+    }
+
     /// Procesa el archivo de audio completo al finalizar la grabación:
-    /// Divide automáticamente el audio en fragmentos seguros de 45 segundos para superar el límite de tiempo de `SFSpeechRecognizer`,
-    /// alinea cada palabra con la diarización de locutores y los eventos acústicos, y reporta progreso en vivo.
+    /// Filtra audios accidentales (< 3 s), omite silencios absolutos, divide audios largos en fragmentos seguros de 45s
+    /// y reporta un estado final preciso (`.completed`, `.noSpeechFound`, `.tooShort`, `.interrupted`, `.failed`).
     func postProcessRecording(
         audioFileURL: URL,
         totalDuration: TimeInterval,
@@ -411,10 +434,33 @@ final class SpeechTranscriptionService {
         diarizer: SpeakerDiarizationService,
         acousticEvents: [AcousticEvent],
         forceFullAnalysis: Bool = false,
+        bypassShortAudioFilter: Bool = false,
         onProgress: (@MainActor (Double, String) -> Void)? = nil
-    ) async -> (segments: [TranscriptSegment], engineDescription: String) {
+    ) async -> PostProcessOutcome {
         configuration = .load()
         configureRecognizer(localeIdentifier: configuration.localeIdentifier)
+
+        let physicalDuration = RecordingStorageService.queryAudioDuration(at: audioFileURL)
+        let effectiveDuration = physicalDuration > 0 ? physicalDuration : totalDuration
+
+        if !bypassShortAudioFilter && effectiveDuration < 3.0 {
+            await onProgress?(1.0, L10n.transcriptionBadgeTooShort)
+            return PostProcessOutcome(
+                segments: [],
+                engineDescription: L10n.transcriptionBadgeTooShort,
+                state: .tooShort,
+                errorMessage: ""
+            )
+        }
+
+        if Task.isCancelled {
+            return PostProcessOutcome(
+                segments: [],
+                engineDescription: L10n.transcriptionBadgeInterrupted,
+                state: .interrupted,
+                errorMessage: L10n.transcriptionErrorInterrupted
+            )
+        }
 
         var finalWords = existingWords
         let activeLocaleId = activeLocale.identifier.replacingOccurrences(of: "_", with: "-")
@@ -425,38 +471,95 @@ final class SpeechTranscriptionService {
         )
 
         let lastCoveredSecond = existingWords.last?.endTime ?? 0.0
-        let needsClassicChunkAnalysis = forceFullAnalysis || existingWords.isEmpty || (totalDuration - lastCoveredSecond > 4.0)
+        let needsClassicChunkAnalysis = forceFullAnalysis || existingWords.isEmpty || (effectiveDuration - lastCoveredSecond > 4.0)
         let whisperReady = configuration.enableWhisperPostProcessing
             && (!configuration.resolvedWhisperAPIKey.isEmpty || AdaptiveAICapability.isLocalServerURL(configuration.whisperEndpointURL))
 
-        if whisperReady,
-           let whisperWords = try? await transcribeWithWhisperEndpoint(audioFileURL: audioFileURL, diarizer: diarizer),
-           !whisperWords.isEmpty {
-            finalWords = whisperWords
-            engineLabel = "Whisper AI (\(configuration.whisperModelName)) + PixelVoice DSP"
-        } else if configuration.useModernSpeechAnalyzer,
-                  #available(iOS 26.0, *),
-                  SpeechTranscriber.isAvailable,
-                  let modernWords = await transcribeAudioFileWithSpeechAnalyzer(
+        var chunkStats: ChunkBatchResult?
+        var modernAttemptedAndAvailable = false
+        var whisperAttemptedAndSucceeded = false
+
+        if whisperReady {
+            do {
+                let whisperWords = try await transcribeWithWhisperEndpoint(audioFileURL: audioFileURL, diarizer: diarizer)
+                if !whisperWords.isEmpty {
+                    finalWords = whisperWords
+                    engineLabel = "Whisper AI (\(configuration.whisperModelName)) + PixelVoice DSP"
+                    whisperAttemptedAndSucceeded = true
+                }
+            } catch {
+                // Continuar automáticamente al motor local de Apple si Whisper falla o el archivo excede límite
+            }
+        }
+
+        if !whisperAttemptedAndSucceeded && !Task.isCancelled {
+            if configuration.useModernSpeechAnalyzer,
+               #available(iOS 26.0, *),
+               SpeechTranscriber.isAvailable {
+                modernAttemptedAndAvailable = true
+                if let modernWords = await transcribeAudioFileWithSpeechAnalyzer(
                     url: audioFileURL,
                     diarizer: diarizer,
                     onProgress: onProgress
-                  ),
-                  !modernWords.isEmpty {
-            finalWords = modernWords
-            let resolvedId = activeLocale.identifier.replacingOccurrences(of: "_", with: "-")
-            engineLabel = L10n.speechEngineSpeechAnalyzer(resolvedId)
-        } else if needsClassicChunkAnalysis {
-            await onProgress?(0.20, L10n.speechSplitting45s)
-            let chunkedWords = await transcribeAudioFileIn45sChunks(
-                url: audioFileURL,
-                totalDuration: totalDuration,
-                diarizer: diarizer,
-                onProgress: onProgress
-            )
-            if !chunkedWords.isEmpty {
-                finalWords = chunkedWords
+                ), !modernWords.isEmpty {
+                    finalWords = modernWords
+                    let resolvedId = activeLocale.identifier.replacingOccurrences(of: "_", with: "-")
+                    engineLabel = L10n.speechEngineSpeechAnalyzer(resolvedId)
+                }
             }
+
+            if finalWords.isEmpty && needsClassicChunkAnalysis && !Task.isCancelled {
+                await onProgress?(0.20, L10n.speechSplitting45s)
+                let batch = await transcribeAudioFileIn45sChunks(
+                    url: audioFileURL,
+                    totalDuration: effectiveDuration,
+                    diarizer: diarizer,
+                    onProgress: onProgress
+                )
+                chunkStats = batch
+                if !batch.words.isEmpty {
+                    finalWords = batch.words
+                }
+            }
+        }
+
+        if Task.isCancelled || chunkStats?.wasCancelled == true {
+            let partialSegments = finalWords.isEmpty ? [] : diarizer.buildSpeakerSegments(
+                words: refineCapitalizationAndPunctuation(words: finalWords, locale: activeLocale),
+                acousticEvents: acousticEvents
+            )
+            return PostProcessOutcome(
+                segments: partialSegments,
+                engineDescription: L10n.transcriptionBadgeInterrupted,
+                state: .interrupted,
+                errorMessage: L10n.transcriptionErrorInterrupted
+            )
+        }
+
+        if finalWords.isEmpty {
+            await onProgress?(1.0, L10n.speechCompleted)
+            let stats = chunkStats
+            let allFailed = (stats?.recognizerAvailable == false && !modernAttemptedAndAvailable)
+                || ((stats?.fatalErrorsCount ?? 0) > 0 && (stats?.fatalErrorsCount ?? 0) >= max(1, stats?.processedNonSilentChunks ?? 0))
+
+            if allFailed {
+                let errText = (stats?.lastErrorMessage.isEmpty == false)
+                    ? stats!.lastErrorMessage
+                    : L10n.transcriptionErrorUnavailable
+                return PostProcessOutcome(
+                    segments: [],
+                    engineDescription: L10n.transcriptionBadgeFailed,
+                    state: .failed,
+                    errorMessage: errText
+                )
+            }
+
+            return PostProcessOutcome(
+                segments: [],
+                engineDescription: L10n.transcriptionBadgeNoSpeech,
+                state: .noSpeechFound,
+                errorMessage: ""
+            )
         }
 
         await onProgress?(0.92, L10n.speechAligning)
@@ -466,7 +569,12 @@ final class SpeechTranscriptionService {
             acousticEvents: acousticEvents
         )
         await onProgress?(1.0, L10n.speechCompleted)
-        return (segments, engineLabel)
+        return PostProcessOutcome(
+            segments: segments,
+            engineDescription: engineLabel,
+            state: .completed,
+            errorMessage: ""
+        )
     }
 
     @available(iOS 26.0, *)
@@ -581,28 +689,59 @@ final class SpeechTranscriptionService {
         }
     }
 
-    /// Divide un archivo de audio de cualquier duración (ej. 2 minutos o 3 horas de clase) en fragmentos seguros de 45 segundos
-    /// para evitar el límite de ~60s de `SFSpeechRecognizer` y transcribir el 100% del audio de principio a fin.
+    /// Divide un archivo de audio de cualquier duración (ej. 2 minutos o 5 horas de clase) en fragmentos seguros de 45 segundos
+    /// para evitar el límite de ~60s de `SFSpeechRecognizer`, omitiendo silencios absolutos para acelerar la transcripción.
     private func transcribeAudioFileIn45sChunks(
         url: URL,
         totalDuration: TimeInterval,
         diarizer: SpeakerDiarizationService,
         onProgress: (@MainActor (Double, String) -> Void)?
-    ) async -> [WordTimestamp] {
+    ) async -> ChunkBatchResult {
         configureRecognizer(localeIdentifier: configuration.localeIdentifier)
-        guard let recognizer = speechRecognizer, recognizer.isAvailable else { return [] }
-        guard let sourceFile = try? AVAudioFile(forReading: url) else { return [] }
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+            return ChunkBatchResult(
+                words: [],
+                processedNonSilentChunks: 0,
+                recognizerAvailable: false,
+                fatalErrorsCount: 1,
+                lastErrorMessage: L10n.transcriptionErrorUnavailable,
+                wasCancelled: false
+            )
+        }
+        guard let sourceFile = try? AVAudioFile(forReading: url) else {
+            return ChunkBatchResult(
+                words: [],
+                processedNonSilentChunks: 0,
+                recognizerAvailable: true,
+                fatalErrorsCount: 1,
+                lastErrorMessage: L10n.transcriptionErrorReadFile,
+                wasCancelled: false
+            )
+        }
 
         let format = sourceFile.processingFormat
         let sampleRate = format.sampleRate
         let totalFrames = sourceFile.length
-        guard sampleRate > 0, totalFrames > 0 else { return [] }
+        guard sampleRate > 0, totalFrames > 0 else {
+            return ChunkBatchResult(
+                words: [],
+                processedNonSilentChunks: 0,
+                recognizerAvailable: true,
+                fatalErrorsCount: 0,
+                lastErrorMessage: "",
+                wasCancelled: false
+            )
+        }
 
         let chunkSeconds: TimeInterval = 45.0
         let framesPerChunk = AVAudioFramePosition(sampleRate * chunkSeconds)
         let totalChunks = max(1, Int(ceil(Double(totalFrames) / Double(framesPerChunk))))
 
         var accumulatedWords: [WordTimestamp] = []
+        var processedNonSilent = 0
+        var fatalErrors = 0
+        var lastErrorMsg = ""
+
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("PixelVoiceChunks_\(UUID().uuidString.prefix(6))", isDirectory: true)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer {
@@ -610,6 +749,17 @@ final class SpeechTranscriptionService {
         }
 
         for chunkIndex in 0..<totalChunks {
+            if Task.isCancelled {
+                return ChunkBatchResult(
+                    words: accumulatedWords,
+                    processedNonSilentChunks: processedNonSilent,
+                    recognizerAvailable: true,
+                    fatalErrorsCount: fatalErrors,
+                    lastErrorMessage: lastErrorMsg,
+                    wasCancelled: true
+                )
+            }
+
             let startFrame = AVAudioFramePosition(chunkIndex) * framesPerChunk
             let remainingFrames = totalFrames - startFrame
             guard remainingFrames > 0 else { break }
@@ -627,27 +777,49 @@ final class SpeechTranscriptionService {
                 )
             )
 
-            // Extraer el fragmento de 45s a un archivo temporal .wav ligero para SFSpeechURLRecognitionRequest
+            // Extraer el fragmento de 45s y medir pico de amplitud para saltar silencios absolutos en 0ms
             let chunkURL = tempDir.appendingPathComponent("chunk_\(chunkIndex).wav")
-            if Self.extractPCMChunk(
+            let extracted = Self.extractPCMChunk(
                 from: sourceFile,
                 startFrame: startFrame,
                 frameCount: currentChunkFrames,
                 to: chunkURL
-            ) {
-                if let chunkWords = await recognizeSingleChunkURL(
-                    chunkURL,
-                    recognizer: recognizer,
-                    timeOffset: chunkStartTimeOffset,
-                    diarizer: diarizer
-                ) {
-                    accumulatedWords.append(contentsOf: chunkWords)
-                }
+            )
+            defer {
                 try? FileManager.default.removeItem(at: chunkURL)
+            }
+
+            guard extracted.success else { continue }
+            guard extracted.peakAmplitude >= 0.0028 else {
+                // Silencio digital completo (<-51 dBFS) en este bloque de 45s: omitir sin consumir tiempo de reconocimiento
+                continue
+            }
+
+            processedNonSilent += 1
+            let chunkOutcome = await recognizeSingleChunkURL(
+                chunkURL,
+                recognizer: recognizer,
+                timeOffset: chunkStartTimeOffset,
+                diarizer: diarizer
+            )
+            if !chunkOutcome.words.isEmpty {
+                accumulatedWords.append(contentsOf: chunkOutcome.words)
+            } else if chunkOutcome.isSystemFailure {
+                fatalErrors += 1
+                if let errDesc = chunkOutcome.errorDescription, !errDesc.isEmpty {
+                    lastErrorMsg = errDesc
+                }
             }
         }
 
-        return accumulatedWords
+        return ChunkBatchResult(
+            words: accumulatedWords,
+            processedNonSilentChunks: processedNonSilent,
+            recognizerAvailable: true,
+            fatalErrorsCount: fatalErrors,
+            lastErrorMessage: lastErrorMsg,
+            wasCancelled: Task.isCancelled
+        )
     }
 
     private static func extractPCMChunk(
@@ -655,7 +827,7 @@ final class SpeechTranscriptionService {
         startFrame: AVAudioFramePosition,
         frameCount: AVAudioFramePosition,
         to destinationURL: URL
-    ) -> Bool {
+    ) -> (success: Bool, peakAmplitude: Float) {
         let format = sourceFile.processingFormat
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
@@ -673,29 +845,35 @@ final class SpeechTranscriptionService {
             commonFormat: format.commonFormat,
             interleaved: format.isInterleaved
         ) else {
-            return false
+            return (false, 0.0)
         }
 
         let bufferCapacity: AVAudioFrameCount = 16384
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: bufferCapacity) else {
-            return false
+            return (false, 0.0)
         }
 
         sourceFile.framePosition = startFrame
         var framesRemaining = frameCount
+        var peak: Float = 0.0
 
         while framesRemaining > 0 {
             let framesToRead = AVAudioFrameCount(min(AVAudioFramePosition(bufferCapacity), framesRemaining))
             do {
                 try sourceFile.read(into: buffer, frameCount: framesToRead)
                 if buffer.frameLength == 0 { break }
+                if let ptr = buffer.floatChannelData?[0] {
+                    var blockMax: Float = 0.0
+                    vDSP_maxmgv(ptr, 1, &blockMax, vDSP_Length(buffer.frameLength))
+                    if blockMax > peak { peak = blockMax }
+                }
                 try destFile.write(from: buffer)
                 framesRemaining -= AVAudioFramePosition(buffer.frameLength)
             } catch {
                 break
             }
         }
-        return true
+        return (true, peak)
     }
 
     private func recognizeSingleChunkURL(
@@ -703,7 +881,7 @@ final class SpeechTranscriptionService {
         recognizer: SFSpeechRecognizer,
         timeOffset: TimeInterval,
         diarizer: SpeakerDiarizationService
-    ) async -> [WordTimestamp]? {
+    ) async -> ChunkRecognizeOutcome {
         let request = SFSpeechURLRecognitionRequest(url: chunkURL)
         request.shouldReportPartialResults = false
         if #available(iOS 16.0, *) {
@@ -713,60 +891,100 @@ final class SpeechTranscriptionService {
             request.requiresOnDeviceRecognition = true
         }
 
-        return await withCheckedContinuation { continuation in
+        final class SingleChunkStateHolder: @unchecked Sendable {
+            let lock = NSLock()
             var hasResumed = false
+            var task: SFSpeechRecognitionTask?
             var latestPartialWords: [WordTimestamp] = []
+        }
 
-            let task = recognizer.recognitionTask(with: request) { result, error in
-                if let result = result {
-                    var parsed: [WordTimestamp] = []
-                    for (idx, seg) in result.bestTranscription.segments.enumerated() {
-                        let trimmed = seg.substring.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !trimmed.isEmpty else { continue }
+        let holder = SingleChunkStateHolder()
 
-                        let start: TimeInterval
-                        let dur: TimeInterval
-                        if seg.timestamp > 0 || idx == 0 {
-                            start = timeOffset + seg.timestamp
-                            dur = max(0.2, seg.duration)
-                        } else if let prev = parsed.last {
-                            start = prev.endTime + 0.04
-                            dur = 0.25
-                        } else {
-                            start = timeOffset
-                            dur = 0.25
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                func finishOnce(_ outcome: ChunkRecognizeOutcome) {
+                    holder.lock.lock()
+                    defer { holder.lock.unlock() }
+                    guard !holder.hasResumed else { return }
+                    holder.hasResumed = true
+                    continuation.resume(returning: outcome)
+                }
+
+                let task = recognizer.recognitionTask(with: request) { result, error in
+                    if let result = result {
+                        var parsed: [WordTimestamp] = []
+                        for (idx, seg) in result.bestTranscription.segments.enumerated() {
+                            let trimmed = seg.substring.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmed.isEmpty else { continue }
+
+                            let start: TimeInterval
+                            let dur: TimeInterval
+                            if seg.timestamp > 0 || idx == 0 {
+                                start = timeOffset + seg.timestamp
+                                dur = max(0.2, seg.duration)
+                            } else if let prev = parsed.last {
+                                start = prev.endTime + 0.04
+                                dur = 0.25
+                            } else {
+                                start = timeOffset
+                                dur = 0.25
+                            }
+
+                            parsed.append(
+                                WordTimestamp(
+                                    word: trimmed,
+                                    startTime: start,
+                                    endTime: start + dur,
+                                    confidence: seg.confidence > 0 ? seg.confidence : 0.92,
+                                    speakerId: diarizer.speakerId(at: start)
+                                )
+                            )
                         }
+                        holder.lock.lock()
+                        holder.latestPartialWords = parsed
+                        holder.lock.unlock()
 
-                        parsed.append(
-                            WordTimestamp(
-                                word: trimmed,
-                                startTime: start,
-                                endTime: start + dur,
-                                confidence: seg.confidence > 0 ? seg.confidence : 0.92,
-                                speakerId: diarizer.speakerId(at: start)
+                        if result.isFinal {
+                            finishOnce(ChunkRecognizeOutcome(words: parsed, errorDescription: nil, isSystemFailure: false))
+                        }
+                    } else if let error = error {
+                        holder.lock.lock()
+                        let partials = holder.latestPartialWords
+                        holder.lock.unlock()
+
+                        let nsError = error as NSError
+                        // Código 1110 de kAFAssistantErrorDomain significa "No se detectó habla" (no es un error fatal de red/motor)
+                        let isNoSpeechNotice = (nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 1110)
+                            || nsError.localizedDescription.lowercased().contains("no speech detected")
+                        finishOnce(
+                            ChunkRecognizeOutcome(
+                                words: partials,
+                                errorDescription: isNoSpeechNotice ? nil : nsError.localizedDescription,
+                                isSystemFailure: !isNoSpeechNotice && partials.isEmpty
                             )
                         )
                     }
-                    latestPartialWords = parsed
+                }
 
-                    if result.isFinal && !hasResumed {
-                        hasResumed = true
-                        continuation.resume(returning: parsed)
-                    }
-                } else if error != nil && !hasResumed {
-                    hasResumed = true
-                    continuation.resume(returning: latestPartialWords.isEmpty ? nil : latestPartialWords)
+                holder.lock.lock()
+                holder.task = task
+                holder.lock.unlock()
+
+                // Timeout de seguridad por fragmento para nunca bloquear una nota larga
+                DispatchQueue.global().asyncAfter(deadline: .now() + 25.0) {
+                    holder.lock.lock()
+                    let partials = holder.latestPartialWords
+                    let currentTask = holder.task
+                    holder.lock.unlock()
+                    currentTask?.cancel()
+                    finishOnce(ChunkRecognizeOutcome(words: partials, errorDescription: nil, isSystemFailure: false))
                 }
             }
-
-            // Timeout de seguridad por fragmento para nunca bloquear el cierre
-            DispatchQueue.global().asyncAfter(deadline: .now() + 25.0) {
-                if !hasResumed {
-                    hasResumed = true
-                    task.cancel()
-                    continuation.resume(returning: latestPartialWords)
-                }
-            }
+        } onCancel: {
+            holder.lock.lock()
+            let currentTask = holder.task
+            holder.lock.unlock()
+            currentTask?.cancel()
         }
     }
 

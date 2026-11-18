@@ -643,6 +643,54 @@ enum L10n {
         tr("trash.confirm.restore_all_message", "All notes will return to All and their original folders.")
     }
 
+    // MARK: - Estados de Transcripción, Recuperación y Aislamiento de Voz
+
+    static var transcriptionBadgeTooShort: String {
+        tr("transcription.badge.too_short", "Short audio (< 3s)")
+    }
+    static var transcriptionBadgeInterrupted: String {
+        tr("transcription.badge.interrupted", "Interrupted — Retry")
+    }
+    static var transcriptionBadgeFailed: String {
+        tr("transcription.badge.failed", "Transcription failed")
+    }
+    static var transcriptionBadgeNoSpeech: String {
+        tr("transcription.badge.no_speech", "No clear speech detected")
+    }
+    static var transcriptionErrorInterrupted: String {
+        tr("transcription.error.interrupted", "Transcription was interrupted by the system. Tap Retry to finish processing from saved audio.")
+    }
+    static var transcriptionErrorSessionRecovered: String {
+        tr("transcription.error.recovered", "Recording recovered automatically after an unexpected interruption. Tap Retry to transcribe.")
+    }
+    static var transcriptionErrorUnavailable: String {
+        tr("transcription.error.unavailable", "Speech recognition service is currently unavailable.")
+    }
+    static var transcriptionErrorReadFile: String {
+        tr("transcription.error.read_file", "Could not read the saved audio file.")
+    }
+    static var bgTranscriptionKeepOpen: String {
+        tr("bg.keep_open", "Transcribing (Keep app open)")
+    }
+    static var transcriptionRetryButton: String {
+        tr("transcription.action.retry", "Retry Transcription")
+    }
+    static var transcriptionRetryShortForce: String {
+        tr("transcription.action.retry_short", "Transcribe Anyway")
+    }
+    static var transcriptionStateNoSpeechDetail: String {
+        tr("transcription.detail.no_speech", "No clear speech detected (music, background noise, or silence only).")
+    }
+    static var transcriptionStateTooShortDetail: String {
+        tr("transcription.detail.too_short", "Recording is under 3 seconds, so automatic transcription was skipped.")
+    }
+    static var transcriptionStateFailedDetail: String {
+        tr("transcription.detail.failed", "Speech recognition failed or lost connectivity before finishing.")
+    }
+    static var playerVoiceIsolation: String {
+        tr("player.voice_isolation", "Voice Isolation")
+    }
+
     // MARK: - Helper de unión de palabras (soporte CJK/sin espacios)
 
     /// Une tokens de transcripción respetando idiomas sin espacios entre palabras (chino, japonés, tailandés)

@@ -1,6 +1,16 @@
 import Foundation
 import SwiftData
 
+/// Estado persistente de la transcripción post-grabación para evitar estados bloqueados y habilitar reintentos limpios.
+enum TranscriptionProcessingState: String, Codable, Sendable, Equatable {
+    case processing = "processing"
+    case completed = "completed"
+    case noSpeechFound = "no_speech_found"
+    case tooShort = "too_short"
+    case interrupted = "interrupted"
+    case failed = "failed"
+}
+
 /// Modelo persistente principal de SwiftData para cada nota de voz de PixelVoice Pro.
 /// Almacena metadatos de fecha y hora exacta hasta el segundo, archivo de audio, transcripción sincronizada,
 /// diarización de locutores, eventos acústicos (SoundAnalysis) y marcadores en vivo.
@@ -34,6 +44,9 @@ final class VoiceRecording {
     var transcriptionEngineUsed: String
     var aiSummaryText: String = ""
     var aiRefinementEngine: String = ""
+    /// Estado de transcripción post-grabación (con default `.completed` compatible con migración ligera SwiftData).
+    var transcriptionStateRaw: String = TranscriptionProcessingState.completed.rawValue
+    var transcriptionErrorMessage: String = ""
     /// Fecha en que la nota fue movida a Papelera (`nil` = nota activa en biblioteca).
     var deletedAt: Date? = nil
 
@@ -83,6 +96,8 @@ final class VoiceRecording {
         transcriptionEngineUsed: String = "Apple Speech On-Device + PixelVoice DSP Diarizer",
         aiSummaryText: String = "",
         aiRefinementEngine: String = "",
+        transcriptionState: TranscriptionProcessingState = .completed,
+        transcriptionErrorMessage: String = "",
         tags: [TagItem] = [],
         speakers: [SpeakerProfile] = [],
         segments: [TranscriptSegment] = [],
@@ -112,6 +127,8 @@ final class VoiceRecording {
         self.transcriptionEngineUsed = transcriptionEngineUsed
         self.aiSummaryText = aiSummaryText
         self.aiRefinementEngine = aiRefinementEngine
+        self.transcriptionStateRaw = transcriptionState.rawValue
+        self.transcriptionErrorMessage = transcriptionErrorMessage
 
         let encoder = JSONEncoder()
         self.tagsData = (try? encoder.encode(tags)) ?? Data()
@@ -128,6 +145,14 @@ final class VoiceRecording {
 
     var audioFormat: AudioFormatOption {
         AudioFormatOption(rawValue: formatRaw) ?? .m4a
+    }
+
+    var transcriptionState: TranscriptionProcessingState {
+        get { TranscriptionProcessingState(rawValue: transcriptionStateRaw) ?? .completed }
+        set {
+            transcriptionStateRaw = newValue.rawValue
+            isProcessingBackground = (newValue == .processing)
+        }
     }
 
     var dayPeriod: DayPeriod {

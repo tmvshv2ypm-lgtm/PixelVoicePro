@@ -15,6 +15,7 @@ final class AudioSessionManager: ObservableObject {
 
     var onInterruptionBegan: (() -> Void)?
     var onInterruptionEnded: ((Bool) -> Void)?
+    var onMediaServicesReset: (() -> Void)?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -58,37 +59,46 @@ final class AudioSessionManager: ObservableObject {
         return (micGranted, speechGranted)
     }
 
-    /// Configura `AVAudioSession` para grabación continua en alta fidelidad manteniendo la salida en el altavoz principal.
+    /// Configura `AVAudioSession` para grabación continua en segundo plano y Bluetooth / altavoz seguro.
     func configureForBackgroundRecording(preferredSampleRate: Double = 48000.0) throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(
             .playAndRecord,
             mode: .default,
             options: [
-                .defaultToSpeaker,
                 .allowBluetooth,
-                .allowBluetoothA2DP,
-                .allowAirPlay
+                .defaultToSpeaker
             ]
         )
-        try session.overrideOutputAudioPort(.speaker)
+        if !hasExternalOutputRoute(in: session) {
+            try? session.overrideOutputAudioPort(.speaker)
+        }
         try session.setPreferredSampleRate(preferredSampleRate)
-        try session.setPreferredIOBufferDuration(0.016) // ~60 FPS (16ms)
+        try session.setPreferredIOBufferDuration(0.016)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
         updateCurrentRouteDescription()
     }
 
-    /// Configura `AVAudioSession` explícitamente hacia el altavoz principal inferior del iPhone al terminar de grabar y al reproducir.
+    /// Configura `AVAudioSession` explícitamente hacia el altavoz principal inferior del iPhone (o auriculares externos) al reproducir.
     func configureForPlayback() throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(
             .playAndRecord,
             mode: .default,
-            options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay]
+            options: [.allowBluetooth, .defaultToSpeaker]
         )
-        try session.overrideOutputAudioPort(.speaker)
+        if !hasExternalOutputRoute(in: session) {
+            try? session.overrideOutputAudioPort(.speaker)
+        }
         try session.setActive(true, options: .notifyOthersOnDeactivation)
         updateCurrentRouteDescription()
+    }
+
+    private func hasExternalOutputRoute(in session: AVAudioSession) -> Bool {
+        let externalTypes: Set<AVAudioSession.Port> = [
+            .headphones, .bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .usbAudio, .airPlay, .carAudio
+        ]
+        return session.currentRoute.outputs.contains { externalTypes.contains($0.portType) }
     }
 
     func updateCurrentRouteDescription() {
@@ -114,6 +124,13 @@ final class AudioSessionManager: ObservableObject {
                 self?.updateCurrentRouteDescription()
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: AVAudioSession.mediaServicesWereResetNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.onMediaServicesReset?()
+            }
+            .store(in: &cancellables)
     }
 
     private func handleInterruption(_ notification: Notification) {
@@ -134,7 +151,6 @@ final class AudioSessionManager: ObservableObject {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                 shouldResume = options.contains(.shouldResume)
             }
-            try? configureForPlayback()
             onInterruptionEnded?(shouldResume)
         @unknown default:
             break

@@ -160,6 +160,7 @@ struct RecordingBoothView: View {
                     viewModel.pendingRecordingInitialTags = []
                 }
                 await beginRecordingAutomatically()
+                recorderService.updateDraftTags(selectedDraftTags)
             }
         }
         .tint(themeManager.primaryAccent)

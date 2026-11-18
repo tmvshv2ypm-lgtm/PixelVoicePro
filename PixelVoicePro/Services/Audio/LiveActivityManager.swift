@@ -116,7 +116,7 @@ final class LiveActivityManager {
         let formattedTimer = Self.formatHHMMSS(currentSecond)
         let statusPrefix = isPaused ? L10n.lockscreenStatusPaused : L10n.lockscreenStatusLive
 
-        if cachedArtwork == nil || lastArtworkStatePaused != isPaused || (currentSecond % 5 == 0) {
+        if cachedArtwork == nil || lastArtworkStatePaused != isPaused || (currentSecond % 15 == 0) {
             cachedArtwork = generateLockScreenBadgeArtwork(
                 isPaused: isPaused,
                 timerText: formattedTimer,

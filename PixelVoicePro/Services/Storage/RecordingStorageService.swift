@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import CoreMedia
 import CryptoKit
 
 /// Gestor de persistencia de archivos de audio en `Documents/PixelVoiceRecordings/` y generador de grabaciones de demostración iniciales.
@@ -431,5 +432,271 @@ enum RecordingStorageService {
         )
         recording.recalculateSpeakerStatistics()
         return recording
+    }
+}
+
+// MARK: - Checkpoint de Recuperación y Ensamblado Seguro en Disco (Anti-Crash)
+
+struct ActiveRecordingCheckpoint: Codable, Sendable {
+    let sessionID: UUID
+    let directoryName: String
+    var title: String
+    let createdAt: Date
+    let formatRaw: String
+    let sampleRate: Double
+    let channelCount: Int
+    var chunkFileNames: [String]
+    var estimatedDuration: TimeInterval
+    var tags: [TagItem]
+    var bookmarks: [RecordingBookmark]
+    var speakers: [SpeakerProfile]
+    var waveformSamples: [Float]
+}
+
+extension RecordingStorageService {
+    static var liveSessionsDirectoryURL: URL {
+        let dir = recordingsDirectoryURL.appendingPathComponent("LiveSessions", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
+    static func sessionDirectoryURL(for sessionID: UUID) -> URL {
+        let dir = liveSessionsDirectoryURL.appendingPathComponent("Session_\(sessionID.uuidString)", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
+    static func saveCheckpoint(_ checkpoint: ActiveRecordingCheckpoint) {
+        let dir = sessionDirectoryURL(for: checkpoint.sessionID)
+        let url = dir.appendingPathComponent("checkpoint.json")
+        if let data = try? JSONEncoder().encode(checkpoint) {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    static func removeSessionDirectory(sessionID: UUID) {
+        let dir = liveSessionsDirectoryURL.appendingPathComponent("Session_\(sessionID.uuidString)", isDirectory: true)
+        if FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.removeItem(at: dir)
+        }
+    }
+
+    static func discoverPendingRecoveryCheckpoints() -> [ActiveRecordingCheckpoint] {
+        let fm = FileManager.default
+        let root = liveSessionsDirectoryURL
+        guard let subdirs = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
+            return []
+        }
+
+        var checkpoints: [ActiveRecordingCheckpoint] = []
+        for dir in subdirs where dir.hasDirectoryPath {
+            let checkpointURL = dir.appendingPathComponent("checkpoint.json")
+            guard let data = try? Data(contentsOf: checkpointURL),
+                  var cp = try? JSONDecoder().decode(ActiveRecordingCheckpoint.self, from: data) else {
+                continue
+            }
+
+            // Incluir cualquier chunk físico presente en el directorio ordenado numéricamente
+            if let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
+                let diskChunks = files
+                    .filter { url in
+                        let ext = url.pathExtension.lowercased()
+                        return ext == "m4a" || ext == "wav"
+                    }
+                    .sorted { $0.lastPathComponent < $1.lastPathComponent }
+                    .map(\.lastPathComponent)
+
+                var merged = cp.chunkFileNames
+                for name in diskChunks where !merged.contains(name) {
+                    merged.append(name)
+                }
+                cp.chunkFileNames = merged
+            }
+            checkpoints.append(cp)
+        }
+        return checkpoints.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// Repara cabecera RIFF/WAVE en disco si un `.wav` quedó abierto tras cierre abrupto del sistema.
+    static func repairWAVHeaderIfNeeded(at url: URL) {
+        guard url.pathExtension.lowercased() == "wav",
+              let handle = try? FileHandle(forUpdating: url) else {
+            return
+        }
+        defer { try? handle.close() }
+
+        let endOffset = (try? handle.seekToEnd()) ?? 0
+        guard endOffset > 44 else { return }
+
+        try? handle.seek(toOffset: 0)
+        let headerData = (try? handle.read(upToCount: 44)) ?? Data()
+        guard headerData.count == 44,
+              String(data: headerData.subdata(in: 0..<4), encoding: .ascii) == "RIFF",
+              String(data: headerData.subdata(in: 8..<12), encoding: .ascii) == "WAVE",
+              String(data: headerData.subdata(in: 36..<40), encoding: .ascii) == "data" else {
+            return
+        }
+
+        let riffSize = UInt32(min(UInt64(UInt32.max), endOffset - 8)).littleEndian
+        let dataSize = UInt32(min(UInt64(UInt32.max), endOffset - 44)).littleEndian
+
+        try? handle.seek(toOffset: 4)
+        try? handle.write(contentsOf: withUnsafeBytes(of: riffSize) { Data($0) })
+        try? handle.seek(toOffset: 40)
+        try? handle.write(contentsOf: withUnsafeBytes(of: dataSize) { Data($0) })
+    }
+
+    /// Valida y une todos los fragmentos grabados (`.m4a` o `.wav`) en el archivo final sin sobrecargar la RAM.
+    static func finalizeAndStitchChunks(
+        chunkURLs: [URL],
+        destinationURL: URL,
+        format: AudioFormatOption
+    ) async -> (url: URL?, duration: TimeInterval) {
+        let fm = FileManager.default
+        var validURLs: [URL] = []
+
+        for url in chunkURLs {
+            guard fm.fileExists(atPath: url.path) else { continue }
+            if format == .wav {
+                repairWAVHeaderIfNeeded(at: url)
+            }
+            let attrs = try? fm.attributesOfItem(atPath: url.path)
+            let bytes = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+            guard bytes > 128 else { continue }
+
+            // Verificar que el contenedor pueda abrirse y tenga al menos 1 frame reproducible
+            if let audioFile = try? AVAudioFile(forReading: url), audioFile.length > 0 {
+                validURLs.append(url)
+            }
+        }
+
+        guard !validURLs.isEmpty else {
+            return (nil, 0)
+        }
+
+        if fm.fileExists(atPath: destinationURL.path) {
+            try? fm.removeItem(at: destinationURL)
+        }
+
+        // Caso rápido: 1 único fragmento válido -> mover directamente al destino
+        if validURLs.count == 1 {
+            let singleURL = validURLs[0]
+            do {
+                try fm.copyItem(at: singleURL, to: destinationURL)
+                let dur = queryAudioDuration(at: destinationURL)
+                return (destinationURL, dur)
+            } catch {
+                return (nil, 0)
+            }
+        }
+
+        // Caso WAV multifragmento: concatenación streaming sin cargar buffers masivos en RAM
+        if format == .wav {
+            guard let firstFile = try? AVAudioFile(forReading: validURLs[0]) else {
+                return (nil, 0)
+            }
+            let fmt = firstFile.processingFormat
+            let settings: [String: Any] = [
+                AVFormatIDKey: Int(kAudioFormatLinearPCM),
+                AVSampleRateKey: fmt.sampleRate,
+                AVNumberOfChannelsKey: Int(fmt.channelCount),
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsNonInterleaved: false
+            ]
+            guard let outFile = try? AVAudioFile(
+                forWriting: destinationURL,
+                settings: settings,
+                commonFormat: fmt.commonFormat,
+                interleaved: fmt.isInterleaved
+            ),
+            let copyBuffer = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 32768) else {
+                return (nil, 0)
+            }
+
+            for chunkURL in validURLs {
+                guard let reader = try? AVAudioFile(forReading: chunkURL) else { continue }
+                while reader.framePosition < reader.length {
+                    do {
+                        try reader.read(into: copyBuffer, frameCount: 32768)
+                        if copyBuffer.frameLength == 0 { break }
+                        try outFile.write(from: copyBuffer)
+                    } catch {
+                        break
+                    }
+                }
+            }
+            let dur = queryAudioDuration(at: destinationURL)
+            return (dur > 0 ? destinationURL : nil, dur)
+        }
+
+        // Caso M4A multifragmento: AVMutableComposition + Passthrough (con fallback a AppleM4A)
+        let composition = AVMutableComposition()
+        guard let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            return (nil, 0)
+        }
+
+        var cursor = CMTime.zero
+        for chunkURL in validURLs {
+            let asset = AVURLAsset(url: chunkURL)
+            guard let assetTrack = try? await asset.loadTracks(withMediaType: .audio).first,
+                  let duration = try? await asset.load(.duration),
+                  CMTimeGetSeconds(duration) > 0.02 else {
+                continue
+            }
+            let range = CMTimeRange(start: .zero, duration: duration)
+            do {
+                try track.insertTimeRange(range, of: assetTrack, at: cursor)
+                cursor = CMTimeAdd(cursor, duration)
+            } catch {
+                continue
+            }
+        }
+
+        guard CMTimeGetSeconds(cursor) > 0.05 else {
+            return (nil, 0)
+        }
+
+        let passthroughOK = await exportComposition(composition, presetName: AVAssetExportPresetPassthrough, to: destinationURL)
+        if passthroughOK {
+            return (destinationURL, queryAudioDuration(at: destinationURL))
+        }
+        if fm.fileExists(atPath: destinationURL.path) {
+            try? fm.removeItem(at: destinationURL)
+        }
+        let encodedOK = await exportComposition(composition, presetName: AVAssetExportPresetAppleM4A, to: destinationURL)
+        if encodedOK {
+            return (destinationURL, queryAudioDuration(at: destinationURL))
+        }
+        return (nil, 0)
+    }
+
+    static func queryAudioDuration(at url: URL) -> TimeInterval {
+        if let file = try? AVAudioFile(forReading: url), file.processingFormat.sampleRate > 0 {
+            return Double(file.length) / file.processingFormat.sampleRate
+        }
+        return 0
+    }
+
+    private static func exportComposition(
+        _ composition: AVMutableComposition,
+        presetName: String,
+        to outputURL: URL
+    ) async -> Bool {
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: presetName) else {
+            return false
+        }
+        exporter.outputURL = outputURL
+        exporter.outputFileType = .m4a
+        return await withCheckedContinuation { continuation in
+            exporter.exportAsynchronously {
+                continuation.resume(returning: exporter.status == .completed)
+            }
+        }
     }
 }

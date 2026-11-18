@@ -58,23 +58,40 @@ struct RecordingDetailView: View {
                 // 1. Cabecera compacta con Título Editable y Fecha/Hora Exacta
                 detailTopHeader
 
-                // 2. Barra discreta si esta nota aún está terminando su análisis en 2º plano
-                if recording.isProcessingBackground && viewModel.isBackgroundProcessingActive {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .scaleEffect(0.75)
-                            .tint(themeManager.primaryAccent)
-                        Text(viewModel.backgroundProcessingStatus.isEmpty ? L10n.processingBackgroundShort : viewModel.backgroundProcessingStatus)
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        Spacer()
-                        Text("\(Int(viewModel.backgroundProcessingProgress * 100))%")
-                            .font(.system(.caption2, design: .monospaced).weight(.bold))
-                            .foregroundStyle(themeManager.primaryAccent)
+                // 2. Barra de estado y progreso en tiempo real si la transcripción está en curso
+                if isProcessingThisNote {
+                    let isActivelyThisNote = viewModel.activeProcessingRecordingID == recording.id
+                        || (viewModel.activeProcessingRecordingID == nil && viewModel.isBackgroundProcessingActive)
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.75)
+                                .tint(themeManager.primaryAccent)
+                            Text(L10n.bgTranscriptionKeepOpen)
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            if isActivelyThisNote && !viewModel.backgroundProcessingStatus.isEmpty {
+                                Text("· \(viewModel.backgroundProcessingStatus)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            if isActivelyThisNote {
+                                Text("\(Int(viewModel.backgroundProcessingProgress * 100))%")
+                                    .font(.system(.caption2, design: .monospaced).weight(.bold))
+                                    .foregroundStyle(themeManager.primaryAccent)
+                            }
+                        }
+
+                        if isActivelyThisNote {
+                            ProgressView(value: viewModel.backgroundProcessingProgress, total: 1.0)
+                                .tint(themeManager.primaryAccent)
+                        }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 8)
                     .background(themeManager.primaryAccent.opacity(0.08))
                 }
 
@@ -436,21 +453,11 @@ struct RecordingDetailView: View {
                     }
 
                     if recording.segments.isEmpty {
-                        VStack(spacing: 10) {
-                            Image(systemName: recording.isProcessingBackground ? "sparkles" : "waveform.and.magnifyingglass")
-                                .font(.largeTitle)
-                                .foregroundStyle(recording.isProcessingBackground ? themeManager.primaryAccent : .secondary)
-                            Text(
-                                recording.isProcessingBackground
-                                    ? L10n.detailTranscribingBg
-                                    : L10n.detailNoTranscript
-                            )
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 36)
+                        transcriptionEmptyOrStatusCard
                     } else {
+                        if recording.transcriptionState == .interrupted || recording.transcriptionState == .failed {
+                            partialRetryBanner
+                        }
                         LazyVStack(alignment: .leading, spacing: 12) {
                             ForEach(recording.segments) { segment in
                                 KaraokeSegmentCardView(
@@ -967,24 +974,178 @@ struct RecordingDetailView: View {
                 }
             }
 
-            Button {
-                playerService.skipSilenceEnabled.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: playerService.skipSilenceEnabled ? "bolt.fill" : "bolt.slash")
-                    Text(L10n.playerSkipSilences)
-                        .lineLimit(1)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: compact ? 8 : 10) {
+                    skipSilencePill(compact: compact)
+                    voiceIsolationPill(compact: compact)
                 }
-                .font(.caption.weight(.bold))
-                .padding(.horizontal, 16)
-                .padding(.vertical, compact ? 8 : 9)
-                .liquidGlassCapsule(
-                    tint: playerService.skipSilenceEnabled ? PixelTheme.successEmerald : nil
-                )
-                .foregroundStyle(playerService.skipSilenceEnabled ? .white : .primary)
+                VStack(spacing: 8) {
+                    skipSilencePill(compact: compact)
+                    voiceIsolationPill(compact: compact)
+                }
             }
-            .buttonStyle(.plain)
         }
+    }
+
+    private func skipSilencePill(compact: Bool) -> some View {
+        audioEnhancementPill(
+            title: L10n.playerSkipSilences,
+            systemImage: playerService.skipSilenceEnabled ? "bolt.fill" : "bolt.slash",
+            isEnabled: playerService.skipSilenceEnabled,
+            activeTint: PixelTheme.successEmerald,
+            compact: compact
+        ) {
+            playerService.skipSilenceEnabled.toggle()
+        }
+    }
+
+    private func voiceIsolationPill(compact: Bool) -> some View {
+        audioEnhancementPill(
+            title: L10n.playerVoiceIsolation,
+            systemImage: playerService.voiceIsolationEnabled ? "person.wave.2.fill" : "person.wave.2",
+            isEnabled: playerService.voiceIsolationEnabled,
+            activeTint: themeManager.primaryAccent,
+            compact: compact
+        ) {
+            playerService.voiceIsolationEnabled.toggle()
+        }
+    }
+
+    private func audioEnhancementPill(
+        title: String,
+        systemImage: String,
+        isEnabled: Bool,
+        activeTint: Color,
+        compact: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                Text(title)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .font(.caption.weight(.bold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, compact ? 8 : 9)
+            .liquidGlassCapsule(
+                tint: isEnabled ? activeTint : nil
+            )
+            .foregroundStyle(isEnabled ? .white : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Tarjetas de Estado y Reintento de Transcripción
+
+    private var isProcessingThisNote: Bool {
+        recording.transcriptionState == .processing
+            || (recording.isProcessingBackground && viewModel.isBackgroundProcessingActive)
+    }
+
+    private var transcriptionEmptyOrStatusCard: some View {
+        let state = recording.transcriptionState
+        let tint = state.badgeColor(
+            themeAccent: themeManager.primaryAccent,
+            isProcessingBackground: isProcessingThisNote
+        )
+        let titleText: String = {
+            if isProcessingThisNote {
+                return L10n.bgTranscriptionKeepOpen
+            }
+            return state.badgeText(isProcessingBackground: false) ?? L10n.detailNoTranscript
+        }()
+        let subtitleText: String? = {
+            if isProcessingThisNote {
+                if viewModel.activeProcessingRecordingID == recording.id,
+                   !viewModel.backgroundProcessingStatus.isEmpty {
+                    return viewModel.backgroundProcessingStatus
+                }
+                return nil
+            }
+            if !recording.transcriptionErrorMessage.isEmpty {
+                return recording.transcriptionErrorMessage
+            }
+            return state != .completed ? state.defaultDetailMessage : nil
+        }()
+
+        return VStack(spacing: 12) {
+            if isProcessingThisNote {
+                ProgressView()
+                    .tint(themeManager.primaryAccent)
+            } else {
+                Image(systemName: state == .completed ? "waveform.and.magnifyingglass" : state.badgeIcon)
+                    .font(.largeTitle)
+                    .foregroundStyle(tint)
+            }
+
+            Text(titleText)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(isProcessingThisNote ? .primary : tint)
+                .multilineTextAlignment(.center)
+
+            if let subtitleText {
+                Text(subtitleText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+            }
+
+            if !isProcessingThisNote {
+                retryTranscriptionButton(
+                    title: state == .tooShort ? L10n.transcriptionRetryShortForce : L10n.transcriptionRetryButton,
+                    bypassShortAudioFilter: state == .tooShort
+                )
+                .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 16)
+        .liquidGlassRoundedRect(cornerRadius: 20, interactive: false)
+    }
+
+    private var partialRetryBanner: some View {
+        let state = recording.transcriptionState
+        let tint = state.badgeColor(themeAccent: themeManager.primaryAccent)
+        return HStack(spacing: 10) {
+            Image(systemName: state.badgeIcon)
+                .foregroundStyle(tint)
+            Text(
+                !recording.transcriptionErrorMessage.isEmpty
+                    ? recording.transcriptionErrorMessage
+                    : state.defaultDetailMessage
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(3)
+            Spacer(minLength: 6)
+            retryTranscriptionButton(
+                title: L10n.transcriptionRetryButton,
+                bypassShortAudioFilter: true
+            )
+        }
+        .padding(12)
+        .liquidGlassRoundedRect(cornerRadius: 16, tint: tint.opacity(0.10), interactive: false)
+    }
+
+    private func retryTranscriptionButton(title: String, bypassShortAudioFilter: Bool) -> some View {
+        Button {
+            viewModel.retryTranscription(
+                for: recording,
+                bypassShortAudioFilter: bypassShortAudioFilter
+            )
+        } label: {
+            Label(title, systemImage: "arrow.clockwise")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .liquidGlassCapsule(tint: themeManager.primaryAccent)
+        }
+        .buttonStyle(.plain)
     }
 }
 

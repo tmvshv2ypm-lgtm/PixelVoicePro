@@ -622,11 +622,14 @@ struct DashboardView: View {
                     .tint(themeManager.primaryAccent)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(L10n.processingBanner(viewModel.backgroundProcessingTitle))
+                    Text(L10n.bgTranscriptionKeepOpen)
                         .font(.caption.weight(.bold))
                         .lineLimit(1)
-                    if !viewModel.backgroundProcessingStatus.isEmpty {
-                        Text(viewModel.backgroundProcessingStatus)
+                    let subtitle = viewModel.backgroundProcessingStatus.isEmpty
+                        ? viewModel.backgroundProcessingTitle
+                        : "\(viewModel.backgroundProcessingTitle) · \(viewModel.backgroundProcessingStatus)"
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -769,6 +772,75 @@ struct FloatingRecordButtonBar: View {
     }
 }
 
+// MARK: - Presentación UI Compartida de Estados de Transcripción
+
+extension TranscriptionProcessingState {
+    func badgeText(isProcessingBackground: Bool) -> String? {
+        switch self {
+        case .processing:
+            return L10n.processingShort
+        case .interrupted:
+            return L10n.transcriptionBadgeInterrupted
+        case .failed:
+            return L10n.transcriptionBadgeFailed
+        case .noSpeechFound:
+            return L10n.transcriptionBadgeNoSpeech
+        case .tooShort:
+            return L10n.transcriptionBadgeTooShort
+        case .completed:
+            return isProcessingBackground ? L10n.processingShort : nil
+        }
+    }
+
+    var badgeIcon: String {
+        switch self {
+        case .processing, .completed:
+            return "sparkles"
+        case .interrupted:
+            return "arrow.clockwise.circle.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        case .noSpeechFound:
+            return "waveform.slash"
+        case .tooShort:
+            return "timer"
+        }
+    }
+
+    func badgeColor(themeAccent: Color, isProcessingBackground: Bool = false) -> Color {
+        if isProcessingBackground {
+            return themeAccent
+        }
+        switch self {
+        case .processing:
+            return themeAccent
+        case .interrupted:
+            return PixelTheme.bookmarkAmber
+        case .failed:
+            return PixelTheme.recordRed
+        case .noSpeechFound, .tooShort, .completed:
+            return .secondary
+        }
+    }
+
+    var defaultDetailMessage: String {
+        switch self {
+        case .processing:
+            return L10n.detailTranscribingBg
+        case .completed:
+            return L10n.detailNoTranscript
+        case .noSpeechFound:
+            return L10n.transcriptionStateNoSpeechDetail
+        case .tooShort:
+            return L10n.transcriptionStateTooShortDetail
+        case .interrupted:
+            return L10n.transcriptionErrorInterrupted
+        case .failed:
+            return L10n.transcriptionStateFailedDetail
+        }
+    }
+}
+
 // MARK: - Tarjeta Individual de Grabación Limpia (Compartida en Carpetas y Búsqueda Global)
 
 struct RecordingListCardView: View {
@@ -865,10 +937,16 @@ struct RecordingListCardView: View {
                     .font(.system(.caption, design: .monospaced).weight(.semibold))
                     .foregroundStyle(.primary)
 
-                if recording.isProcessingBackground {
-                    Label(L10n.processingShort, systemImage: "sparkles")
+                if let badgeLabel = recording.transcriptionState.badgeText(isProcessingBackground: recording.isProcessingBackground) {
+                    Label(badgeLabel, systemImage: recording.transcriptionState.badgeIcon)
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(themeManager.primaryAccent)
+                        .foregroundStyle(
+                            recording.transcriptionState.badgeColor(
+                                themeAccent: themeManager.primaryAccent,
+                                isProcessingBackground: recording.isProcessingBackground
+                            )
+                        )
+                        .lineLimit(1)
                 }
 
                 Spacer()

@@ -251,11 +251,7 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
                         }
                     }
                     let finalDuration = Double(audioFile.length) / sampleRate
-                    stateLock.lock()
-                    let openStart = silenceStartTime
-                    silenceStartTime = nil
-                    stateLock.unlock()
-                    if let openStart {
+                    if let openStart = takeOpenSilenceStartAndClear() {
                         finalizeSilenceInterval(from: openStart, to: finalDuration)
                     }
                 }
@@ -263,6 +259,14 @@ final class AcousticEventAnalyzer: NSObject, SNResultsObserving {
         }
         // 2. Re-escanear risas, suspiros, aplausos, tos y música con SoundAnalysis
         await analyzeCompleteAudioFileIfNeeded(at: fileURL)
+    }
+
+    private func takeOpenSilenceStartAndClear() -> TimeInterval? {
+        stateLock.lock()
+        let openStart = silenceStartTime
+        silenceStartTime = nil
+        stateLock.unlock()
+        return openStart
     }
 
     /// Permite registrar un evento acústico directamente o desde post-procesamiento.

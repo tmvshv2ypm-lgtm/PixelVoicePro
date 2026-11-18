@@ -348,6 +348,7 @@ final class IntelligentRefinementService {
             speakerId: segment.speakerId,
             startTime: segStart,
             endTime: segEnd,
+            text: L10n.smartJoinWords(newWordTimestamps.map(\.word)),
             words: newWordTimestamps,
             inlineEvents: segment.inlineEvents
         )

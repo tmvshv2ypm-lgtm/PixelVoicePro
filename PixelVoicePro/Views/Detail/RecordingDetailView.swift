@@ -49,6 +49,8 @@ struct RecordingDetailView: View {
     @State private var selectedTab: DetailTab = .player
     @State private var transcriptDisplayMode: TranscriptDisplayMode = .bySpeaker
     @State private var didCopyContinuousNote: Bool = false
+    @State private var expandedAcousticEventTypes: Set<AcousticEventType> = []
+    @State private var acousticEventVisibleLimits: [AcousticEventType: Int] = [:]
     @State private var localSearchQuery: String = ""
     @State private var currentSearchHitIndex: Int = 0
     @State private var selectedSpeakerIdForRename: String?
@@ -556,9 +558,26 @@ struct RecordingDetailView: View {
 
     // MARK: - Pestaña 2: Resumen, Marcadores en Vivo y Eventos Acústicos
 
+    private struct AcousticEventGroup: Identifiable {
+        let type: AcousticEventType
+        let events: [AcousticEvent]
+        var id: AcousticEventType { type }
+    }
+
+    private func groupedAcousticEvents(from events: [AcousticEvent]) -> [AcousticEventGroup] {
+        guard !events.isEmpty else { return [] }
+        let grouped = Dictionary(grouping: events, by: \.type)
+        return AcousticEventType.allCases.compactMap { type in
+            guard let list = grouped[type], !list.isEmpty else { return nil }
+            return AcousticEventGroup(type: type, events: list)
+        }
+    }
+
     private var summaryAndBookmarksTabView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+        let eventGroups = groupedAcousticEvents(from: recording.acousticEvents)
+
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
                 // 0. Resumen Inteligente / Post-Procesamiento con IA bajo demanda
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -647,98 +666,89 @@ struct RecordingDetailView: View {
                             .foregroundStyle(.secondary)
                             .padding(.vertical, 4)
                     } else {
-                        ForEach(recording.bookmarks) { bm in
-                            HStack {
-                                Button {
-                                    playerService.seek(to: bm.timestamp, autoPlay: true)
-                                } label: {
-                                    HStack(spacing: 10) {
-                                        Text(bm.formattedTimestamp)
-                                            .font(.system(.caption, design: .monospaced).weight(.bold))
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(PixelTheme.bookmarkAmber.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
-                                            .foregroundStyle(PixelTheme.bookmarkAmber)
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(recording.bookmarks) { bm in
+                                HStack {
+                                    Button {
+                                        playerService.seek(to: bm.timestamp, autoPlay: true)
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            Text(bm.formattedTimestamp)
+                                                .font(.system(.caption, design: .monospaced).weight(.bold))
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(PixelTheme.bookmarkAmber.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
+                                                .foregroundStyle(PixelTheme.bookmarkAmber)
 
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(bm.label)
-                                                .font(.caption.weight(.bold))
-                                                .foregroundStyle(.primary)
-                                            if !bm.note.isEmpty {
-                                                Text(bm.note)
-                                                    .font(.caption2)
-                                                    .foregroundStyle(.secondary)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(bm.label)
+                                                    .font(.caption.weight(.bold))
+                                                    .foregroundStyle(.primary)
+                                                if !bm.note.isEmpty {
+                                                    Text(bm.note)
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.secondary)
+                                                }
                                             }
+                                            Spacer()
+                                            Image(systemName: "play.circle.fill")
+                                                .foregroundStyle(themeManager.primaryAccent)
                                         }
-                                        Spacer()
-                                        Image(systemName: "play.circle.fill")
-                                            .foregroundStyle(themeManager.primaryAccent)
                                     }
-                                }
-                                .buttonStyle(.plain)
+                                    .buttonStyle(.plain)
 
-                                Button(role: .destructive) {
-                                    recording.removeBookmark(id: bm.id)
-                                    viewModel.saveChanges()
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .font(.caption)
-                                        .foregroundStyle(.red)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(10)
-                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-                        }
-                    }
-                }
-
-                // 2. Eventos Acústicos Detectados (SoundAnalysis: Risas, Música, Aplausos, Pausas)
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(
-                        L10n.detailAcousticEvents,
-                        systemImage: "waveform.badge.magnifyingglass"
-                    )
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(themeManager.primaryAccent)
-
-                    if recording.acousticEvents.isEmpty {
-                        Text(L10n.detailNoAcousticEvents)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(recording.acousticEvents) { event in
-                            Button {
-                                playerService.seek(to: event.timestamp, autoPlay: true)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Text(event.type.emoji)
-                                        .font(.title3)
-                                        .frame(width: 34, height: 34)
-                                        .background(event.type.color.opacity(0.18), in: Circle())
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(event.formattedInlineTag)
-                                            .font(.caption.weight(.bold))
-                                            .foregroundStyle(event.type.color)
-                                        Text(L10n.detailAIConfidenceDuration(confidencePct: Int(event.confidence * 100), durationText: String(format: "%.1f", event.duration)))
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                                    Button(role: .destructive) {
+                                        recording.removeBookmark(id: bm.id)
+                                        viewModel.saveChanges()
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.caption)
+                                            .foregroundStyle(.red)
                                     }
-
-                                    Spacer()
-
-                                    Label(L10n.jump, systemImage: "play.fill")
-                                        .font(.caption2.weight(.bold))
-                                        .padding(.horizontal, 9)
-                                        .padding(.vertical, 4)
-                                        .background(event.type.color.opacity(0.15), in: Capsule())
-                                        .foregroundStyle(event.type.color)
+                                    .buttonStyle(.plain)
                                 }
                                 .padding(10)
                                 .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
                             }
-                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                // 2. Eventos Acústicos Agrupados por Tipo (Desplegables bajo demanda para rendimiento O(1) en clases largas)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Label(
+                            L10n.detailAcousticEvents,
+                            systemImage: "waveform.badge.magnifyingglass"
+                        )
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(themeManager.primaryAccent)
+
+                        Spacer()
+
+                        if !recording.acousticEvents.isEmpty {
+                            Text("\(recording.acousticEvents.count)")
+                                .font(.system(.caption2, design: .monospaced).weight(.bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(themeManager.primaryAccent.opacity(0.14), in: Capsule())
+                                .foregroundStyle(themeManager.primaryAccent)
+                        }
+                    }
+
+                    if eventGroups.isEmpty {
+                        Text(L10n.detailNoAcousticEvents)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(eventGroups) { group in
+                                if group.events.count == 1, let single = group.events.first {
+                                    acousticEventRow(single)
+                                } else {
+                                    acousticEventCollapsibleGroupCard(group)
+                                }
+                            }
                         }
                     }
                 }
@@ -794,6 +804,128 @@ struct RecordingDetailView: View {
             .frame(maxWidth: horizontalSizeClass == .regular ? 860 : .infinity)
             .frame(maxWidth: .infinity)
         }
+    }
+
+    private func acousticEventCollapsibleGroupCard(_ group: AcousticEventGroup) -> some View {
+        let isExpanded = expandedAcousticEventTypes.contains(group.type)
+        let visibleLimit = acousticEventVisibleLimits[group.type] ?? 25
+        let firstTime = group.events.first.map { ExactDateFormatter.exactAudioPosition($0.timestamp) } ?? ""
+        let lastTime = group.events.last.map { ExactDateFormatter.exactAudioPosition($0.timestamp) } ?? ""
+
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                    if isExpanded {
+                        expandedAcousticEventTypes.remove(group.type)
+                    } else {
+                        expandedAcousticEventTypes.insert(group.type)
+                    }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Text(group.type.emoji)
+                        .font(.title3)
+                        .frame(width: 34, height: 34)
+                        .background(group.type.color.opacity(0.18), in: Circle())
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(group.type.localizedTitle)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(group.type.color)
+                            Text("×\(group.events.count)")
+                                .font(.system(.caption2, design: .monospaced).weight(.bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(group.type.color.opacity(0.16), in: Capsule())
+                                .foregroundStyle(group.type.color)
+                        }
+                        Text("\(firstTime) – \(lastTime)")
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .padding(10)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                Divider()
+                    .opacity(0.45)
+                    .padding(.horizontal, 10)
+
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(group.events.prefix(visibleLimit))) { event in
+                        acousticEventRow(event, nested: true)
+                    }
+
+                    if group.events.count > visibleLimit {
+                        let remaining = group.events.count - visibleLimit
+                        Button {
+                            acousticEventVisibleLimits[group.type] = visibleLimit + 25
+                        } label: {
+                            Text(L10n.detailShowMoreEvents(remaining))
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(group.type.color)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(group.type.color.opacity(0.12), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
+                    }
+                }
+                .padding(10)
+            }
+        }
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func acousticEventRow(_ event: AcousticEvent, nested: Bool = false) -> some View {
+        Button {
+            playerService.seek(to: event.timestamp, autoPlay: true)
+        } label: {
+            HStack(spacing: 10) {
+                if !nested {
+                    Text(event.type.emoji)
+                        .font(.title3)
+                        .frame(width: 34, height: 34)
+                        .background(event.type.color.opacity(0.18), in: Circle())
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(event.formattedInlineTag)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(event.type.color)
+                    Text(L10n.detailAIConfidenceDuration(confidencePct: Int(event.confidence * 100), durationText: String(format: "%.1f", event.duration)))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Label(L10n.jump, systemImage: "play.fill")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(event.type.color.opacity(0.15), in: Capsule())
+                    .foregroundStyle(event.type.color)
+            }
+            .padding(nested ? 8 : 10)
+            .background(
+                nested ? Color.primary.opacity(0.04) : Color(uiColor: .secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: nested ? 10 : 12)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Pestaña 3: Detalles Técnicos del Archivo y Exportación

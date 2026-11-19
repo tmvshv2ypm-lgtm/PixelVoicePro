@@ -705,6 +705,9 @@ enum L10n {
     static var transcriptCopied: String {
         tr("transcript.copied", "Copied")
     }
+    static func detailShowMoreEvents(_ remaining: Int) -> String {
+        fmt("detail.show_more_events", "Show more (+%@)", "\(remaining)")
+    }
 
     // MARK: - Helper de unión de palabras (soporte CJK/sin espacios)
 

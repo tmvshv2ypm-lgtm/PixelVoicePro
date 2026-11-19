@@ -413,11 +413,11 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         return max(0.0, min(duration, seekStartTime + playedSeconds))
     }
 
-    // MARK: - Sincronización Audio-Texto (Karaoke 60 Hz) y "Saltar Silencios"
+    // MARK: - Sincronización Audio-Texto (Karaoke 30 Hz) y "Saltar Silencios"
 
     private func start60HzSyncTimer() {
         syncTimer?.invalidate()
-        let interval: TimeInterval = 1.0 / 60.0
+        let interval: TimeInterval = 1.0 / 30.0
         syncTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             Task { @MainActor in

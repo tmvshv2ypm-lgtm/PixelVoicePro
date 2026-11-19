@@ -343,7 +343,7 @@ private struct TrashedRecordingRowCard: View {
                 )
 
                 trashActionButton(
-                    title: L10n.trashDeleteForeverAction,
+                    title: L10n.delete,
                     systemImage: "trash",
                     tint: PixelTheme.recordRed,
                     fillOpacity: 0.12,

@@ -68,7 +68,10 @@ struct RecordingBoothView: View {
                                     liveSpeakerTurns: recorderService.liveSpeakerTurns,
                                     speakers: recorderService.liveSpeakers,
                                     expandVertically: true,
-                                    minCanvasHeight: 84
+                                    minCanvasHeight: 84,
+                                    onSpectrumModeChanged: { active in
+                                        recorderService.setSpectrumModeActive(active)
+                                    }
                                 )
                                 .frame(width: leftWidth)
                                 .frame(maxHeight: .infinity)
@@ -119,7 +122,10 @@ struct RecordingBoothView: View {
                                 liveSpeakerTurns: recorderService.liveSpeakerTurns,
                                 speakers: recorderService.liveSpeakers,
                                 expandVertically: !isTranscriptOpen,
-                                minCanvasHeight: isTranscriptOpen ? compactCanvasHeight : 132
+                                minCanvasHeight: isTranscriptOpen ? compactCanvasHeight : 132,
+                                onSpectrumModeChanged: { active in
+                                    recorderService.setSpectrumModeActive(active)
+                                }
                             )
                             .frame(width: contentWidth)
                             .frame(maxHeight: isTranscriptOpen ? compactWaveTotalMaxHeight : .infinity)
@@ -548,8 +554,14 @@ struct RecordingBoothView: View {
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "stop.circle.fill")
-                            .font(.body)
+                        if recorderService.state == .finalizing {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "stop.circle.fill")
+                                .font(.body)
+                        }
                         Text(L10n.boothFinishSave)
                             .fontWeight(.bold)
                             .lineLimit(1)

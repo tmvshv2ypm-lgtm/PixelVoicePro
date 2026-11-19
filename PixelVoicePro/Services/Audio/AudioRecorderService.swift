@@ -82,27 +82,34 @@ final class AudioRecorderService: ObservableObject {
     private var currentChunkIndex: Int = 0
     private var currentChunkStartElapsed: TimeInterval = 0.0
     private var isRotatingChunk: Bool = false
-    private let chunkRotationIntervalSeconds: TimeInterval = 30.0
+    /// Rotación segura cada 2 minutos: 4x menos archivos/I/O en disco y empalme binario < 0.5s al finalizar
+    private let chunkRotationIntervalSeconds: TimeInterval = 120.0
+    /// Tasa de refresco visual en primer plano (15 FPS: fluida y ~4x menor carga CPU/GPU que 60 FPS)
+    private let foregroundTimerFPS: Double = 15.0
     private var cachedAudioFormat: AVAudioFormat?
     private var cachedAudioSettings: [String: Any] = [:]
     private var liveMLStreamStarted: Bool = false
 
     private var isAppInBackground: Bool = false
+    private var isSpectrumModeVisible: Bool = false
+    private var lastPublishedTurnCount: Int = 1
     private var wasPausedByInterruption: Bool = false
 
     private var transcriptionService = SpeechTranscriptionService()
     private var diarizationService = SpeakerDiarizationService()
     private var acousticAnalyzer = AcousticEventAnalyzer()
 
-    /// Cola serial en segundo plano para DSP (Pitch F0, ZCR y detección RMS de pausas) a ~4 Hz sin tocar `@MainActor`.
-    private let dspQueue = DispatchQueue(label: "com.pixelvoicepro.dsp.live", qos: .userInitiated)
-    /// Cola serial dedicada para enviar copias ligeras de audio a `SFSpeechRecognizer` y `SoundAnalysis` sin crear `Task { @MainActor }` 47 veces/s.
+    /// Cola serial en segundo plano para DSP (Pitch F0, ZCR y detección RMS de pausas) sin tocar `@MainActor`.
+    private let dspQueue = DispatchQueue(label: "com.pixelvoicepro.dsp.live", qos: .utility)
+    /// Cola serial dedicada para enviar copias ligeras de audio a `SFSpeechRecognizer` y `SoundAnalysis` sin crear `Task { @MainActor }` por buffer.
     private let liveAnalysisQueue = DispatchQueue(label: "com.pixelvoicepro.live.analysis", qos: .utility)
     private let clockLock = NSLock()
     private nonisolated(unsafe) var clockIsRecording: Bool = false
     private nonisolated(unsafe) var clockAccumulatedBeforePause: TimeInterval = 0
     private nonisolated(unsafe) var clockLastResumeUptime: TimeInterval = 0
     private nonisolated(unsafe) var clockLiveTranscriptionEnabled: Bool = false
+    private nonisolated(unsafe) var clockIsInBackground: Bool = false
+    private nonisolated(unsafe) var clockComputeSpectrum: Bool = false
     private nonisolated(unsafe) var lastLiveDSPTimestamp: TimeInterval = -1.0
     private nonisolated(unsafe) var lastLiveDSPPublishUptime: TimeInterval = 0.0
 
@@ -182,15 +189,24 @@ final class AudioRecorderService: ObservableObject {
         persistSessionCheckpointSnapshot()
     }
 
+    func setSpectrumModeActive(_ active: Bool) {
+        isSpectrumModeVisible = active
+        clockLock.lock()
+        clockComputeSpectrum = active && !isAppInBackground
+        clockLock.unlock()
+    }
+
     private func handleAppDidEnterBackground() {
         guard !isAppInBackground else { return }
         isAppInBackground = true
 
         guard state == .recording || state == .paused else { return }
 
-        // Apagar SFSpeechRecognizer y CoreML SoundAnalysis al bloquear pantalla para blindar RAM y CPU
+        // Apagar SFSpeechRecognizer, CoreML SoundAnalysis, FFT y diarización en vivo al bloquear pantalla
         clockLock.lock()
         clockLiveTranscriptionEnabled = false
+        clockIsInBackground = true
+        clockComputeSpectrum = false
         clockLock.unlock()
 
         if isLiveTranscriptionEnabled {
@@ -200,7 +216,7 @@ final class AudioRecorderService: ObservableObject {
 
         persistSessionCheckpointSnapshot()
 
-        // Cambiar timer UI de 60 FPS a 1 Hz ligero para mantener Lock Screen sin quemar batería
+        // Cambiar timer UI a 1 Hz ligero para mantener registro de onda y rotación de disco sin quemar batería
         if state == .recording {
             startRecordingTimer(fps: 1.0)
         }
@@ -212,11 +228,19 @@ final class AudioRecorderService: ObservableObject {
 
         guard state == .recording || state == .paused else { return }
 
+        // Sincronizar la línea de tiempo visual con las muestras guardadas mientras la pantalla estaba bloqueada
+        if liveTimelineSamples.count != fullRecordingWaveform.count {
+            liveTimelineSamples = fullRecordingWaveform
+        }
+
         if state == .recording {
             elapsedTime = accumulatedTimeBeforePause + max(0.0, ProcessInfo.processInfo.systemUptime - lastResumeMachTime)
             let wantsLive = isLiveTranscriptionEnabled
+            let wantsSpectrum = isSpectrumModeVisible
             clockLock.lock()
             clockLiveTranscriptionEnabled = wantsLive
+            clockIsInBackground = false
+            clockComputeSpectrum = wantsSpectrum
             clockLock.unlock()
 
             if wantsLive {
@@ -226,7 +250,12 @@ final class AudioRecorderService: ObservableObject {
                 }
                 transcriptionService.startLiveTranscription(diarizer: diarizationService, offsetSeconds: elapsedTime)
             }
-            startRecordingTimer(fps: 60.0)
+            startRecordingTimer(fps: foregroundTimerFPS)
+        } else {
+            clockLock.lock()
+            clockIsInBackground = false
+            clockComputeSpectrum = false
+            clockLock.unlock()
         }
     }
 
@@ -318,21 +347,27 @@ final class AudioRecorderService: ObservableObject {
     }
 
     private func updateClockState(recording: Bool, accumulated: TimeInterval, resumeUptime: TimeInterval, liveTranscript: Bool) {
+        let inBg = isAppInBackground
+        let computeSpec = isSpectrumModeVisible && !inBg && recording
         clockLock.lock()
         clockIsRecording = recording
         clockAccumulatedBeforePause = accumulated
         clockLastResumeUptime = resumeUptime
         clockLiveTranscriptionEnabled = liveTranscript
+        clockIsInBackground = inBg
+        clockComputeSpectrum = computeSpec
         clockLock.unlock()
     }
 
-    private nonisolated func snapshotClockForAudioTap() -> (isRecording: Bool, elapsed: TimeInterval, liveTranscript: Bool) {
+    private nonisolated func snapshotClockForAudioTap() -> (isRecording: Bool, elapsed: TimeInterval, liveTranscript: Bool, inBackground: Bool, computeSpectrum: Bool) {
         clockLock.lock()
         let isRec = clockIsRecording
         let elapsed = isRec ? (clockAccumulatedBeforePause + max(0.0, ProcessInfo.processInfo.systemUptime - clockLastResumeUptime)) : clockAccumulatedBeforePause
         let live = clockLiveTranscriptionEnabled
+        let inBg = clockIsInBackground
+        let spec = clockComputeSpectrum
         clockLock.unlock()
-        return (isRec, elapsed, live)
+        return (isRec, elapsed, live, inBg, spec)
     }
 
     // MARK: - Inicio, Pausa, Reanudación y Finalización de Grabación
@@ -368,6 +403,7 @@ final class AudioRecorderService: ObservableObject {
         self.accumulatedTimeBeforePause = 0.0
         self.lastResumeMachTime = startUptime
         self.lastTimelineSampleIndex = -1
+        self.lastPublishedTurnCount = 1
         self.fullRecordingWaveform.removeAll()
         self.liveTimelineSamples.removeAll()
         self.liveBookmarks.removeAll()
@@ -443,7 +479,7 @@ final class AudioRecorderService: ObservableObject {
         persistSessionCheckpointSnapshot()
 
         inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: recordingFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
             self.processIncomingAudioBuffer(buffer)
         }
@@ -464,13 +500,16 @@ final class AudioRecorderService: ObservableObject {
             activeSpeaker: L10n.speakerShortBadge(1)
         )
 
-        startRecordingTimer(fps: isAppInBackground ? 1.0 : 60.0)
+        startRecordingTimer(fps: isAppInBackground ? 1.0 : foregroundTimerFPS)
     }
 
     func pauseRecording() {
         guard state == .recording else { return }
         audioEngine.pause()
         accumulatedTimeBeforePause = elapsedTime
+        if liveTimelineSamples.count != fullRecordingWaveform.count {
+            liveTimelineSamples = fullRecordingWaveform
+        }
         updateClockState(
             recording: false,
             accumulated: accumulatedTimeBeforePause,
@@ -531,7 +570,7 @@ final class AudioRecorderService: ObservableObject {
             formatBadge: selectedFormat.shortBadge,
             force: true
         )
-        startRecordingTimer(fps: isAppInBackground ? 1.0 : 60.0)
+        startRecordingTimer(fps: isAppInBackground ? 1.0 : foregroundTimerFPS)
     }
 
     /// Añade un Marcador de Tiempo en vivo con un solo toque sin detener ni interrumpir la grabación.
@@ -728,6 +767,8 @@ final class AudioRecorderService: ObservableObject {
         liveSegments.removeAll()
         liveBookmarks.removeAll()
         liveAcousticEvents.removeAll()
+        liveTimelineSamples.removeAll()
+        fullRecordingWaveform.removeAll()
         liveCustomDraftTitle = ""
         activeSessionID = nil
         activeSessionTags = []
@@ -748,35 +789,40 @@ final class AudioRecorderService: ObservableObject {
         try? outputAudioFile?.write(from: buffer)
         fileWriteLock.unlock()
 
+        let tapSnapshot = snapshotClockForAudioTap()
+        guard tapSnapshot.isRecording else { return }
         guard let channelData = buffer.floatChannelData?[0] else { return }
 
-        // 2. Calcular RMS, decibelios y 28 bandas espectrales en Accelerate (vDSP) sin tocar @MainActor
+        // 2. Calcular RMS y decibelios en Accelerate (vDSP) sin asignaciones de heap
         var rms: Float = 0.0
         vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
         let db = 20.0 * log10(max(rms, 1e-6))
         let normalized = max(0.03, min(1.0, (db + 55.0) / 55.0))
 
-        var bands = [Float](repeating: 0.04, count: 28)
-        let step = max(1, frameLength / 28)
-        for b in 0..<28 {
-            let startIdx = b * step
-            let count = min(step, frameLength - startIdx)
-            if count > 0 {
-                var bandMean: Float = 0.0
-                vDSP_meamgv(channelData.advanced(by: startIdx), 1, &bandMean, vDSP_Length(count))
-                bands[b] = min(1.0, max(0.05, sqrt(bandMean) * 4.2))
+        // Solo calcular 28 bandas espectrales cuando el usuario tiene abierto el modo FFT en primer plano
+        if tapSnapshot.computeSpectrum {
+            var bands = [Float](repeating: 0.04, count: 28)
+            let step = max(1, frameLength / 28)
+            for b in 0..<28 {
+                let startIdx = b * step
+                let count = min(step, frameLength - startIdx)
+                if count > 0 {
+                    var bandMean: Float = 0.0
+                    vDSP_meamgv(channelData.advanced(by: startIdx), 1, &bandMean, vDSP_Length(count))
+                    bands[b] = min(1.0, max(0.05, sqrt(bandMean) * 4.2))
+                }
             }
+            meteringLock.lock()
+            self.latestMeasuredRMS = normalized
+            self.latestCurrentDecibels = db
+            self.latestSpectralBands = bands
+            meteringLock.unlock()
+        } else {
+            meteringLock.lock()
+            self.latestMeasuredRMS = normalized
+            self.latestCurrentDecibels = db
+            meteringLock.unlock()
         }
-
-        // Guardar telemetría visual para que la lea el timer a 60 FPS sin crear Tasks por buffer
-        meteringLock.lock()
-        self.latestMeasuredRMS = normalized
-        self.latestCurrentDecibels = db
-        self.latestSpectralBands = bands
-        meteringLock.unlock()
-
-        let tapSnapshot = snapshotClockForAudioTap()
-        guard tapSnapshot.isRecording else { return }
 
         // Si el usuario desplegó manualmente transcripción en vivo Y la app está en primer plano,
         // copiar el buffer ligero hacia cola serial secundaria sin saturar @MainActor
@@ -791,9 +837,12 @@ final class AudioRecorderService: ObservableObject {
             }
         }
 
-        // Throttling estricto (~4 Hz) para ejecutar DSP de locutores y silencios en cola secundaria serial
+        // Throttling inteligente:
+        // - Con pantalla bloqueada: solo registrar pausas RMS cada 0.50s (0 autocorrelación, 0 copias de buffers)
+        // - En primer plano: diarización acústica ligera cada 0.80s (~1.25 Hz) para evitar calentamiento
+        let dspInterval: TimeInterval = tapSnapshot.inBackground ? 0.50 : 0.80
         clockLock.lock()
-        let shouldRunDSP = (tapSnapshot.elapsed - lastLiveDSPTimestamp) >= 0.24
+        let shouldRunDSP = (tapSnapshot.elapsed - lastLiveDSPTimestamp) >= dspInterval
         if shouldRunDSP {
             lastLiveDSPTimestamp = tapSnapshot.elapsed
         }
@@ -801,17 +850,30 @@ final class AudioRecorderService: ObservableObject {
 
         guard shouldRunDSP else { return }
 
-        // Copiar muestra acotada de floats fuera del buffer reutilizable de AVAudioEngine
+        let elapsedAtTap = tapSnapshot.elapsed
+        let runRMSOnly = !tapSnapshot.liveTranscript
+
+        if tapSnapshot.inBackground {
+            dspQueue.async { [weak self] in
+                guard let self = self else { return }
+                let postSnapshot = self.snapshotClockForAudioTap()
+                guard postSnapshot.isRecording else { return }
+                if runRMSOnly {
+                    self.acousticAnalyzer.analyzeRMS(rms, at: elapsedAtTap)
+                }
+            }
+            return
+        }
+
+        // Copiar muestra acotada de floats fuera del buffer reutilizable de AVAudioEngine (solo en primer plano)
         let sampleCount = min(frameLength, 1024)
         let floatCopy = Array(UnsafeBufferPointer(start: channelData, count: sampleCount))
         let sampleRate = buffer.format.sampleRate
-        let elapsedAtTap = tapSnapshot.elapsed
-        let runRMSOnly = !tapSnapshot.liveTranscript
 
         dspQueue.async { [weak self] in
             guard let self = self else { return }
             let postSnapshot = self.snapshotClockForAudioTap()
-            guard postSnapshot.isRecording else { return }
+            guard postSnapshot.isRecording && !postSnapshot.inBackground else { return }
 
             if runRMSOnly {
                 self.acousticAnalyzer.analyzeRMS(rms, at: elapsedAtTap)
@@ -823,12 +885,11 @@ final class AudioRecorderService: ObservableObject {
                 at: elapsedAtTap
             )
 
-            let speakersSnapshot = self.diarizationService.detectedSpeakers
-            let turnsSnapshot = self.diarizationService.speakerTurnMarkers
+            let currentTurnCount = self.diarizationService.turnCount
 
             let uptime = ProcessInfo.processInfo.systemUptime
             self.clockLock.lock()
-            let shouldPublishUI = !postSnapshot.isRecording ? false : ((uptime - self.lastLiveDSPPublishUptime) >= 0.25)
+            let shouldPublishUI = !postSnapshot.isRecording ? false : ((uptime - self.lastLiveDSPPublishUptime) >= 0.75)
             if shouldPublishUI {
                 self.lastLiveDSPPublishUptime = uptime
             }
@@ -836,12 +897,18 @@ final class AudioRecorderService: ObservableObject {
 
             guard shouldPublishUI else { return }
 
+            let speakersSnapshot = self.diarizationService.detectedSpeakers
+
             Task { @MainActor [weak self] in
                 guard let self = self, self.state == .recording, !self.isAppInBackground else { return }
-                if self.activeSpeakerId != diarizationResult.speakerId || self.liveSpeakers.count != speakersSnapshot.count {
+                let turnsChanged = currentTurnCount != self.lastPublishedTurnCount
+                if self.activeSpeakerId != diarizationResult.speakerId
+                    || self.liveSpeakers.count != speakersSnapshot.count
+                    || turnsChanged {
                     self.activeSpeakerId = diarizationResult.speakerId
                     self.liveSpeakers = speakersSnapshot
-                    self.liveSpeakerTurns = turnsSnapshot
+                    self.liveSpeakerTurns = self.diarizationService.speakerTurnMarkers
+                    self.lastPublishedTurnCount = currentTurnCount
                 }
                 self.activeSpeakerPitchHz = diarizationResult.pitchHz
 
@@ -860,16 +927,15 @@ final class AudioRecorderService: ObservableObject {
 
     private func startRecordingTimer(fps: Double) {
         highPrecisionTimer?.invalidate()
-        let clampedFPS = max(1.0, min(60.0, fps))
+        let clampedFPS = max(1.0, min(30.0, fps))
         highPrecisionTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / clampedFPS, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             Task { @MainActor in
                 guard self.state == .recording else { return }
                 let now = ProcessInfo.processInfo.systemUptime
                 let currentElapsed = self.accumulatedTimeBeforePause + (now - self.lastResumeMachTime)
-                self.elapsedTime = currentElapsed
 
-                // Rotar el fragmento en disco cada 30s para garantizar audio salvable incluso ante cierre abrupto de iOS
+                // Rotar el fragmento en disco cada 2 min para garantizar audio salvable incluso ante cierre abrupto de iOS
                 self.rotateAudioChunkIfNeeded(at: currentElapsed)
 
                 let (measuredRMS, measuredDB, bandsSnapshot) = self.meteringLock.withLock {
@@ -879,7 +945,7 @@ final class AudioRecorderService: ObservableObject {
                 let sample = max(0.04, min(1.0, measuredRMS))
 
                 if self.isAppInBackground {
-                    // En segundo plano conservar puntos ligeros sin disparar redibujado SwiftUI a 60 Hz
+                    // En segundo plano conservar puntos ligeros sin disparar redibujado SwiftUI (@Published)
                     let currentDeciSecond = Int(currentElapsed * 10.0)
                     if currentDeciSecond > self.lastTimelineSampleIndex {
                         let missing = currentDeciSecond - self.lastTimelineSampleIndex
@@ -890,13 +956,9 @@ final class AudioRecorderService: ObservableObject {
                         self.lastTimelineSampleIndex = currentDeciSecond
                     }
                 } else {
+                    self.elapsedTime = currentElapsed
                     self.currentDecibels = measuredDB
                     self.normalizedLevel = measuredRMS
-
-                    self.liveWaveformWindow.append(sample)
-                    if self.liveWaveformWindow.count > 96 {
-                        self.liveWaveformWindow.removeFirst(self.liveWaveformWindow.count - 96)
-                    }
 
                     let currentDeciSecond = Int(currentElapsed * 10.0)
                     if currentDeciSecond > self.lastTimelineSampleIndex {
@@ -914,12 +976,18 @@ final class AudioRecorderService: ObservableObject {
                         self.lastTimelineSampleIndex = currentDeciSecond
                     }
 
-                    for i in 0..<min(self.liveSpectrumBands.count, bandsSnapshot.count) {
-                        self.liveSpectrumBands[i] = (self.liveSpectrumBands[i] * 0.55) + (bandsSnapshot[i] * 0.45)
+                    // Actualizar espectro en una sola asignación atómica y únicamente cuando el modo FFT esté activo
+                    if self.isSpectrumModeVisible {
+                        let count = min(self.liveSpectrumBands.count, bandsSnapshot.count)
+                        var smoothed = self.liveSpectrumBands
+                        for i in 0..<count {
+                            smoothed[i] = (smoothed[i] * 0.55) + (bandsSnapshot[i] * 0.45)
+                        }
+                        self.liveSpectrumBands = smoothed
                     }
                 }
 
-                // Actualizar la tarjeta persistente en la pantalla bloqueada (LiveActivityManager ya aplica throttle de 1s)
+                // Sincronizar tarjeta persistente en Pantalla Bloqueada (LiveActivityManager ya aplica throttle de 15s)
                 let speakerBadge = self.liveSpeakers.first(where: { $0.id == self.activeSpeakerId })?.shortBadgeCode ?? L10n.speakerShortBadge(1)
                 LiveActivityManager.shared.updateLockScreenProgress(
                     title: self.liveCustomDraftTitle,

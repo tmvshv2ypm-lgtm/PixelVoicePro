@@ -74,7 +74,7 @@ final class AudioSessionManager: ObservableObject {
             try? session.overrideOutputAudioPort(.speaker)
         }
         try session.setPreferredSampleRate(preferredSampleRate)
-        try session.setPreferredIOBufferDuration(0.016)
+        try session.setPreferredIOBufferDuration(0.045)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
         updateCurrentRouteDescription()
     }

@@ -34,6 +34,9 @@ final class LiveActivityManager {
     private var cachedArtwork: MPMediaItemArtwork?
     private var lastArtworkStatePaused: Bool?
     private var lastUpdateSecond: Int = -1
+    private var lastPublishedTitle: String = ""
+    private var lastPublishedSpeaker: String = ""
+    private var lastPublishedPaused: Bool?
     private var remoteCommandsConfigured: Bool = false
 
     var onTogglePauseFromLockScreen: (() -> Void)?
@@ -107,27 +110,34 @@ final class LiveActivityManager {
         force: Bool = false
     ) {
         let currentSecond = Int(elapsedTime)
-        guard force || currentSecond != lastUpdateSecond else { return }
-        lastUpdateSecond = currentSecond
-
         let resolvedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? L10n.lockscreenInProgress
             : title
-        let formattedTimer = Self.formatHHMMSS(currentSecond)
+        let stateChanged = (lastPublishedPaused != isPaused)
+            || (lastPublishedTitle != resolvedTitle)
+            || (lastPublishedSpeaker != activeSpeaker)
+        // iOS avanza el cronómetro nativamente en Lock Screen con PlaybackRate = 1.0:
+        // limitar IPC a mediaserverd / ActivityKit a cada 15s (o al cambiar pausa/título/locutor) reduce drásticamente el consumo energético.
+        guard force || stateChanged || lastUpdateSecond < 0 || (currentSecond - lastUpdateSecond) >= 15 else { return }
+        lastUpdateSecond = currentSecond
+        lastPublishedTitle = resolvedTitle
+        lastPublishedSpeaker = activeSpeaker
+        lastPublishedPaused = isPaused
+
         let statusPrefix = isPaused ? L10n.lockscreenStatusPaused : L10n.lockscreenStatusLive
 
-        if cachedArtwork == nil || lastArtworkStatePaused != isPaused || (currentSecond % 15 == 0) {
+        // Generar la carátula estática solo al iniciar o cambiar entre Grabando/Pausado (2 bitmaps en toda la sesión)
+        if cachedArtwork == nil || lastArtworkStatePaused != isPaused {
             cachedArtwork = generateLockScreenBadgeArtwork(
                 isPaused: isPaused,
-                timerText: formattedTimer,
                 formatBadge: formatBadge
             )
             lastArtworkStatePaused = isPaused
         }
 
         var nowPlayingInfo: [String: Any] = [
-            MPMediaItemPropertyTitle: "\(statusPrefix) · \( formattedTimer )",
-            MPMediaItemPropertyArtist: "\(resolvedTitle) • \(activeSpeaker)",
+            MPMediaItemPropertyTitle: "\(statusPrefix) · \(resolvedTitle)",
+            MPMediaItemPropertyArtist: activeSpeaker,
             MPMediaItemPropertyAlbumTitle: "Voice Notes (\(formatBadge))",
             MPNowPlayingInfoPropertyIsLiveStream: false,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsedTime,
@@ -163,6 +173,9 @@ final class LiveActivityManager {
     /// Cierra y limpia la tarjeta de la pantalla de bloqueo al finalizar la grabación.
     func stopLockScreenActivity() {
         lastUpdateSecond = -1
+        lastPublishedTitle = ""
+        lastPublishedSpeaker = ""
+        lastPublishedPaused = nil
         cachedArtwork = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
@@ -222,7 +235,7 @@ final class LiveActivityManager {
 
     // MARK: - Generador de Carátula en Vivo para la Pantalla de Bloqueo
 
-    private func generateLockScreenBadgeArtwork(isPaused: Bool, timerText: String, formatBadge: String) -> MPMediaItemArtwork {
+    private func generateLockScreenBadgeArtwork(isPaused: Bool, formatBadge: String) -> MPMediaItemArtwork {
         let size = CGSize(width: 300, height: 300)
         let renderer = UIGraphicsImageRenderer(size: size)
         let image = renderer.image { ctx in
@@ -245,20 +258,19 @@ final class LiveActivityManager {
             strokePath.stroke()
 
             // Punto rojo central de "Grabando en vivo"
-            let dotRect = CGRect(x: 118, y: 78, width: 64, height: 64)
+            let dotRect = CGRect(x: 118, y: 82, width: 64, height: 64)
             accentColor.setFill()
             UIBezierPath(ovalIn: dotRect).fill()
 
-            // Texto de cronómetro HH:MM:SS en la tarjeta
             let paragraph = NSMutableParagraphStyle()
             paragraph.alignment = .center
 
-            let timerAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.monospacedDigitSystemFont(ofSize: 32, weight: .heavy),
+            let titleAttrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 28, weight: .heavy),
                 .foregroundColor: UIColor.white,
                 .paragraphStyle: paragraph
             ]
-            NSString(string: timerText).draw(in: CGRect(x: 20, y: 162, width: 260, height: 42), withAttributes: timerAttrs)
+            NSString(string: isPaused ? "II" : "REC").draw(in: CGRect(x: 20, y: 164, width: 260, height: 36), withAttributes: titleAttrs)
 
             let subAttrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 15, weight: .bold),
@@ -266,7 +278,7 @@ final class LiveActivityManager {
                 .paragraphStyle: paragraph
             ]
             let stateText = isPaused ? L10n.lockscreenBadgePaused : L10n.lockscreenBadgeLive(formatBadge)
-            NSString(string: stateText).draw(in: CGRect(x: 20, y: 208, width: 260, height: 24), withAttributes: subAttrs)
+            NSString(string: stateText).draw(in: CGRect(x: 20, y: 206, width: 260, height: 24), withAttributes: subAttrs)
         }
 
         return MPMediaItemArtwork(boundsSize: size) { _ in image }

@@ -557,7 +557,7 @@ extension RecordingStorageService {
         format: AudioFormatOption
     ) async -> (url: URL?, duration: TimeInterval) {
         let fm = FileManager.default
-        var validURLs: [URL] = []
+        var candidateURLs: [URL] = []
 
         for url in chunkURLs {
             guard fm.fileExists(atPath: url.path) else { continue }
@@ -567,14 +567,10 @@ extension RecordingStorageService {
             let attrs = try? fm.attributesOfItem(atPath: url.path)
             let bytes = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
             guard bytes > 128 else { continue }
-
-            // Verificar que el contenedor pueda abrirse y tenga al menos 1 frame reproducible
-            if let audioFile = try? AVAudioFile(forReading: url), audioFile.length > 0 {
-                validURLs.append(url)
-            }
+            candidateURLs.append(url)
         }
 
-        guard !validURLs.isEmpty else {
+        guard !candidateURLs.isEmpty else {
             return (nil, 0)
         }
 
@@ -582,77 +578,96 @@ extension RecordingStorageService {
             try? fm.removeItem(at: destinationURL)
         }
 
-        // Caso rápido: 1 único fragmento válido -> mover directamente al destino
-        if validURLs.count == 1 {
-            let singleURL = validURLs[0]
+        // Caso rápido: 1 único fragmento válido -> copiar directamente al destino
+        if candidateURLs.count == 1 {
+            let singleURL = candidateURLs[0]
+            let singleDur = queryAudioDuration(at: singleURL)
+            guard singleDur > 0.02 else { return (nil, 0) }
             do {
                 try fm.copyItem(at: singleURL, to: destinationURL)
-                let dur = queryAudioDuration(at: destinationURL)
-                return (destinationURL, dur)
+                return (destinationURL, singleDur)
             } catch {
                 return (nil, 0)
             }
         }
 
-        // Caso WAV multifragmento: concatenación streaming sin cargar buffers masivos en RAM
+        // Caso WAV multifragmento: concatenación streaming en hilo utilitario sin cargar buffers masivos en RAM
         if format == .wav {
-            guard let firstFile = try? AVAudioFile(forReading: validURLs[0]) else {
-                return (nil, 0)
-            }
-            let fmt = firstFile.processingFormat
-            let settings: [String: Any] = [
-                AVFormatIDKey: Int(kAudioFormatLinearPCM),
-                AVSampleRateKey: fmt.sampleRate,
-                AVNumberOfChannelsKey: Int(fmt.channelCount),
-                AVLinearPCMBitDepthKey: 16,
-                AVLinearPCMIsBigEndianKey: false,
-                AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsNonInterleaved: false
-            ]
-            guard let outFile = try? AVAudioFile(
-                forWriting: destinationURL,
-                settings: settings,
-                commonFormat: fmt.commonFormat,
-                interleaved: fmt.isInterleaved
-            ),
-            let copyBuffer = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 32768) else {
-                return (nil, 0)
-            }
-
-            for chunkURL in validURLs {
-                guard let reader = try? AVAudioFile(forReading: chunkURL) else { continue }
-                while reader.framePosition < reader.length {
-                    do {
-                        try reader.read(into: copyBuffer, frameCount: 32768)
-                        if copyBuffer.frameLength == 0 { break }
-                        try outFile.write(from: copyBuffer)
-                    } catch {
-                        break
+            return await Task.detached(priority: .userInitiated) {
+                var validURLs: [URL] = []
+                for url in candidateURLs {
+                    if let f = try? AVAudioFile(forReading: url), f.length > 0 {
+                        validURLs.append(url)
                     }
                 }
-            }
-            let dur = queryAudioDuration(at: destinationURL)
-            return (dur > 0 ? destinationURL : nil, dur)
+                guard let firstURL = validURLs.first,
+                      let firstFile = try? AVAudioFile(forReading: firstURL) else {
+                    return (nil, 0)
+                }
+                let fmt = firstFile.processingFormat
+                let settings: [String: Any] = [
+                    AVFormatIDKey: Int(kAudioFormatLinearPCM),
+                    AVSampleRateKey: fmt.sampleRate,
+                    AVNumberOfChannelsKey: Int(fmt.channelCount),
+                    AVLinearPCMBitDepthKey: 16,
+                    AVLinearPCMIsBigEndianKey: false,
+                    AVLinearPCMIsFloatKey: false,
+                    AVLinearPCMIsNonInterleaved: false
+                ]
+                guard let outFile = try? AVAudioFile(
+                    forWriting: destinationURL,
+                    settings: settings,
+                    commonFormat: fmt.commonFormat,
+                    interleaved: fmt.isInterleaved
+                ),
+                let copyBuffer = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 32768) else {
+                    return (nil, 0)
+                }
+
+                for chunkURL in validURLs {
+                    guard let reader = try? AVAudioFile(forReading: chunkURL) else { continue }
+                    while reader.framePosition < reader.length {
+                        do {
+                            try reader.read(into: copyBuffer, frameCount: 32768)
+                            if copyBuffer.frameLength == 0 { break }
+                            try outFile.write(from: copyBuffer)
+                        } catch {
+                            break
+                        }
+                    }
+                }
+                let dur = queryAudioDuration(at: destinationURL)
+                return (dur > 0 ? destinationURL : nil, dur)
+            }.value
         }
 
-        // Caso M4A multifragmento: AVMutableComposition + Passthrough (con fallback a AppleM4A)
+        // Caso M4A multifragmento: AVMutableComposition + empalme binario AAC sin recodificar (< 0.5s para 1 hora)
         let composition = AVMutableComposition()
         guard let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             return (nil, 0)
         }
 
         var cursor = CMTime.zero
-        for chunkURL in validURLs {
+        var firstFormatHint: CMFormatDescription?
+        var validChunkCount = 0
+        var lastValidURL: URL?
+
+        for chunkURL in candidateURLs {
             let asset = AVURLAsset(url: chunkURL)
             guard let assetTrack = try? await asset.loadTracks(withMediaType: .audio).first,
                   let duration = try? await asset.load(.duration),
                   CMTimeGetSeconds(duration) > 0.02 else {
                 continue
             }
+            if firstFormatHint == nil {
+                firstFormatHint = (try? await assetTrack.load(.formatDescriptions))?.first
+            }
             let range = CMTimeRange(start: .zero, duration: duration)
             do {
                 try track.insertTimeRange(range, of: assetTrack, at: cursor)
                 cursor = CMTimeAdd(cursor, duration)
+                validChunkCount += 1
+                lastValidURL = chunkURL
             } catch {
                 continue
             }
@@ -662,10 +677,31 @@ extension RecordingStorageService {
             return (nil, 0)
         }
 
-        let passthroughOK = await exportComposition(composition, presetName: AVAssetExportPresetPassthrough, to: destinationURL)
-        if passthroughOK {
-            return (destinationURL, queryAudioDuration(at: destinationURL))
+        // Si solo sobrevivió 1 fragmento válido tras filtrar corruptos -> copia directa sin re-empaquetar
+        if validChunkCount == 1, let onlyURL = lastValidURL {
+            do {
+                try fm.copyItem(at: onlyURL, to: destinationURL)
+                return (destinationURL, queryAudioDuration(at: destinationURL))
+            } catch {
+                return (nil, 0)
+            }
         }
+
+        // 1. Empalme comprimido AAC lossless (AVAssetReader + AVAssetWriter outputSettings: nil) -> 0% recodificación CPU
+        let losslessOK = await stitchM4ACompositionLossless(
+            composition: composition,
+            track: track,
+            sourceFormatHint: firstFormatHint,
+            to: destinationURL
+        )
+        if losslessOK {
+            let dur = queryAudioDuration(at: destinationURL)
+            if dur > 0.05 {
+                return (destinationURL, dur)
+            }
+        }
+
+        // 2. Respaldo seguro solo si el empalme binario fallase por incompatibilidad de codec
         if fm.fileExists(atPath: destinationURL.path) {
             try? fm.removeItem(at: destinationURL)
         }
@@ -674,6 +710,94 @@ extension RecordingStorageService {
             return (destinationURL, queryAudioDuration(at: destinationURL))
         }
         return (nil, 0)
+    }
+
+    /// Copia paquetes AAC comprimidos directamente de una composición a `.m4a` sin decodificar ni re-codificar PCM.
+    private static func stitchM4ACompositionLossless(
+        composition: AVMutableComposition,
+        track: AVCompositionTrack,
+        sourceFormatHint: CMFormatDescription?,
+        to outputURL: URL
+    ) async -> Bool {
+        final class PumpContext: @unchecked Sendable {
+            let reader: AVAssetReader
+            let readerOutput: AVAssetReaderTrackOutput
+            let writer: AVAssetWriter
+            let writerInput: AVAssetWriterInput
+            let lock = NSLock()
+            var finished = false
+
+            init(reader: AVAssetReader, readerOutput: AVAssetReaderTrackOutput, writer: AVAssetWriter, writerInput: AVAssetWriterInput) {
+                self.reader = reader
+                self.readerOutput = readerOutput
+                self.writer = writer
+                self.writerInput = writerInput
+            }
+
+            func markFinishedOnce() -> Bool {
+                lock.lock()
+                defer { lock.unlock() }
+                if finished { return false }
+                finished = true
+                return true
+            }
+        }
+
+        guard let reader = try? AVAssetReader(asset: composition),
+              let writer = try? AVAssetWriter(outputURL: outputURL, fileType: .m4a) else {
+            return false
+        }
+
+        let readerOutput = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        readerOutput.alwaysCopiesSampleData = false
+        guard reader.canAdd(readerOutput) else { return false }
+        reader.add(readerOutput)
+
+        let writerInput = AVAssetWriterInput(mediaType: .audio, outputSettings: nil, sourceFormatHint: sourceFormatHint)
+        writerInput.expectsMediaDataInRealTime = false
+        guard writer.canAdd(writerInput) else { return false }
+        writer.add(writerInput)
+
+        guard reader.startReading(), writer.startWriting() else {
+            reader.cancelReading()
+            writer.cancelWriting()
+            return false
+        }
+        writer.startSession(atSourceTime: .zero)
+
+        let ctx = PumpContext(reader: reader, readerOutput: readerOutput, writer: writer, writerInput: writerInput)
+        let pumpQueue = DispatchQueue(label: "com.pixelvoicepro.m4a.lossless.stitch", qos: .userInitiated)
+
+        return await withCheckedContinuation { continuation in
+            ctx.writerInput.requestMediaDataWhenReady(on: pumpQueue) {
+                while ctx.writerInput.isReadyForMoreMediaData {
+                    let nextBuffer: CMSampleBuffer? = autoreleasepool {
+                        ctx.readerOutput.copyNextSampleBuffer()
+                    }
+                    if let sampleBuffer = nextBuffer {
+                        if !ctx.writerInput.append(sampleBuffer) {
+                            if ctx.markFinishedOnce() {
+                                ctx.reader.cancelReading()
+                                ctx.writerInput.markAsFinished()
+                                ctx.writer.cancelWriting()
+                                continuation.resume(returning: false)
+                            }
+                            return
+                        }
+                    } else {
+                        if ctx.markFinishedOnce() {
+                            ctx.writerInput.markAsFinished()
+                            let readerSucceeded = (ctx.reader.status == .completed)
+                            ctx.writer.finishWriting {
+                                let ok = readerSucceeded && (ctx.writer.status == .completed)
+                                continuation.resume(returning: ok)
+                            }
+                        }
+                        return
+                    }
+                }
+            }
+        }
     }
 
     static func queryAudioDuration(at url: URL) -> TimeInterval {

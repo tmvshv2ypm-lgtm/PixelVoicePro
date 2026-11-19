@@ -39,6 +39,12 @@ final class SpeakerDiarizationService {
     /// Historial cronológico de asignaciones (timestamp -> speakerId) para alinear palabras y pintar en la línea de tiempo CapCut.
     private var timelineAssignments: [(timestamp: TimeInterval, speakerId: String)] = []
 
+    var turnCount: Int {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return timelineAssignments.count
+    }
+
     var speakerTurnMarkers: [SpeakerTurnMarker] {
         stateLock.lock()
         defer { stateLock.unlock() }
@@ -48,7 +54,7 @@ final class SpeakerDiarizationService {
     /// Umbral mínimo de energía RMS para considerar que hay voz activa
     private let voiceActivityThreshold: Float = 0.014
     /// Tiempo mínimo entre cambios automáticos de locutor para evitar falsos positivos en entonaciones
-    private let minimumTurnDuration: TimeInterval = 1.65
+    private let minimumTurnDuration: TimeInterval = 2.4
     /// Máximo número de locutores detectables automáticamente por sesión
     private let maxSpeakers: Int = 6
 
@@ -297,9 +303,9 @@ final class SpeakerDiarizationService {
             }
         }
 
-        // Umbral adaptativo: si hubo una pausa > 0.55s es más probable que otro interlocutor haya tomado la palabra
-        let newSpeakerDistanceThreshold: Double = pauseDurationBeforeFrame > 0.55 ? 1.15 : 1.48
-        let canSwitchTurn = (feature.timestamp - lastSpeakerSwitchTime) >= minimumTurnDuration || pauseDurationBeforeFrame > 0.65
+        // Umbral adaptativo: si hubo una pausa > 0.65s es más probable que otro interlocutor haya tomado la palabra
+        let newSpeakerDistanceThreshold: Double = pauseDurationBeforeFrame > 0.65 ? 1.35 : 1.75
+        let canSwitchTurn = (feature.timestamp - lastSpeakerSwitchTime) >= minimumTurnDuration || pauseDurationBeforeFrame > 0.85
 
         if smallestDistance > newSpeakerDistanceThreshold && canSwitchTurn && clusters.count < maxSpeakers {
             // Crear un nuevo Locutor (Locutor 2, Locutor 3, etc.)
@@ -442,15 +448,30 @@ final class SpeakerDiarizationService {
 
         var bestLag = 0
         var maxCorrelation: Float = 0.0
+        let compareLength = vDSP_Length(frameCount - maxLag)
 
-        for lag in minLag...maxLag {
+        // Barrido grueso paso 2 + refinamiento fino +/-1 para reducir CPU a la mitad con igual precisión F0
+        for lag in stride(from: minLag, through: maxLag, by: 2) {
             var corr: Float = 0.0
-            let compareLength = vDSP_Length(frameCount - maxLag)
             vDSP_dotpr(samples, 1, samples.advanced(by: lag), 1, &corr, compareLength)
             let normalizedCorr = corr / zeroLagEnergy
             if normalizedCorr > maxCorrelation {
                 maxCorrelation = normalizedCorr
                 bestLag = lag
+            }
+        }
+
+        if bestLag > 0 {
+            let refineLow = max(minLag, bestLag - 1)
+            let refineHigh = min(maxLag, bestLag + 1)
+            for lag in refineLow...refineHigh where lag != bestLag {
+                var corr: Float = 0.0
+                vDSP_dotpr(samples, 1, samples.advanced(by: lag), 1, &corr, compareLength)
+                let normalizedCorr = corr / zeroLagEnergy
+                if normalizedCorr > maxCorrelation {
+                    maxCorrelation = normalizedCorr
+                    bestLag = lag
+                }
             }
         }
 

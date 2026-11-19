@@ -403,7 +403,7 @@ struct DashboardView: View {
                 }
             }
 
-            // Botón "+" integrado con exactamente las mismas proporciones que cada carpeta
+            // Botón "+" minimalista integrado con exactamente las mismas proporciones que cada carpeta
             Button {
                 showTagManagerSheet = true
             } label: {
@@ -412,31 +412,14 @@ struct DashboardView: View {
                     interactive: true,
                     alignment: .center
                 ) {
-                    VStack(spacing: 8) {
-                        ZStack {
-                            Circle()
-                                .fill(themeManager.manageFoldersTileColor.opacity(0.14))
-                                .frame(width: 46, height: 46)
-                            Image(systemName: "plus")
-                                .font(.title3.weight(.bold))
-                                .foregroundStyle(themeManager.manageFoldersTileColor)
-                        }
-
-                        VStack(spacing: 2) {
-                            Text(L10n.foldersManageTitle)
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-
-                            Text(L10n.foldersManageSubtitle)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                        }
+                    ZStack {
+                        Circle()
+                            .fill(themeManager.manageFoldersTileColor.opacity(0.14))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: "plus")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(themeManager.manageFoldersTileColor)
                     }
-                    .multilineTextAlignment(.center)
                 }
             }
             .buttonStyle(.plain)

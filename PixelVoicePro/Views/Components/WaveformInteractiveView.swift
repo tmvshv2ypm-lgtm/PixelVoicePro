@@ -16,6 +16,7 @@ struct LiveBoothWaveformView: View {
     let speakers: [SpeakerProfile]
     var expandVertically: Bool = false
     var minCanvasHeight: CGFloat = 132
+    var onSpectrumModeChanged: ((Bool) -> Void)? = nil
 
     @State private var showSpectrumMode: Bool = false
     /// Escala en puntos por segundo (zoom estilo CapCut: de 12 pt/s a 80 pt/s)
@@ -85,6 +86,7 @@ struct LiveBoothWaveformView: View {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
                         showSpectrumMode.toggle()
                     }
+                    onSpectrumModeChanged?(showSpectrumMode)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: showSpectrumMode ? "waveform" : "chart.bar.xaxis")
@@ -132,10 +134,10 @@ struct LiveBoothWaveformView: View {
                                             pointsPerSecond: pointsPerSecond,
                                             elapsedTime: elapsedTime,
                                             timelineSamples: timelineSamples,
-                                            turnsInWindow: liveSpeakerTurns.filter { $0.timestamp >= tileStart - 1.5 && $0.timestamp < tileEnd + 0.5 },
+                                            turnsInWindow: Self.sliceByTimestamp(liveSpeakerTurns, from: tileStart - 1.5, to: tileEnd + 0.5, timestamp: \.timestamp),
                                             allTurns: liveSpeakerTurns,
-                                            eventsInWindow: liveEvents.filter { $0.timestamp >= tileStart - 0.5 && $0.timestamp < tileEnd + 0.5 },
-                                            bookmarksInWindow: liveBookmarks.filter { $0.timestamp >= tileStart - 0.5 && $0.timestamp < tileEnd + 0.5 },
+                                            eventsInWindow: Self.sliceByTimestamp(liveEvents, from: tileStart - 0.5, to: tileEnd + 0.5, timestamp: \.timestamp),
+                                            bookmarksInWindow: Self.sliceByTimestamp(liveBookmarks, from: tileStart - 0.5, to: tileEnd + 0.5, timestamp: \.timestamp),
                                             speakers: speakers,
                                             fallbackSpeakerColor: activeSpeakerColor
                                         )
@@ -179,6 +181,37 @@ struct LiveBoothWaveformView: View {
             .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
+        .onDisappear {
+            onSpectrumModeChanged?(false)
+        }
+    }
+
+    /// Extrae elementos dentro de `[from, to)` en O(log N) sobre arreglos ordenados cronológicamente (vital para clases de 3–5h).
+    private static func sliceByTimestamp<T>(
+        _ items: [T],
+        from start: TimeInterval,
+        to end: TimeInterval,
+        timestamp: (T) -> TimeInterval
+    ) -> [T] {
+        guard !items.isEmpty else { return [] }
+        var low = 0
+        var high = items.count
+        while low < high {
+            let mid = (low + high) / 2
+            if timestamp(items[mid]) < start {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        guard low < items.count else { return [] }
+        var result: [T] = []
+        var idx = low
+        while idx < items.count && timestamp(items[idx]) < end {
+            result.append(items[idx])
+            idx += 1
+        }
+        return result
     }
 }
 
